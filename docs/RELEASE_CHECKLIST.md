@@ -8,7 +8,7 @@ Historical results are in [BUILDING.md](BUILDING.md#validation-status).
 
 - [ ] Select and record the candidate commit in the official repository.
 - [ ] Review build triggers, permissions, and tag-triggered release behavior.
-- [ ] Confirm the intended draft/prerelease policy for this version; the current workflow creates non-draft, non-prerelease releases on tag pushes.
+- [ ] Confirm the intended draft/prerelease policy for this version; tag builds upload directly to a draft and publish a non-prerelease release only after all three platforms succeed.
 - [ ] Inspect tracked source, docs, screenshots, examples, and workflows for inclusion in the release.
 - [ ] Confirm the source contains no accidentally installed mods or stale activation/priority entries.
 - [ ] Check documentation links and all five README screenshots.

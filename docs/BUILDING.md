@@ -107,6 +107,11 @@ configured global libraries.
 
 Distribute the whole output directory, not just the executable. Debug builds use `export/debug/`. Libraries, Node modules, and build output are deliberately excluded from source control.
 
+Tagged GitHub Actions builds upload packages directly to a release draft, without
+using Actions artifact storage. The release is published after all three platform
+builds and uploads succeed. Windows uses ZIP; Linux and macOS use tar.gz to retain
+executable permissions. Non-tag builds use Actions artifacts with one-day retention.
+
 If a build fails with undefined native references after switching toolchains or compiler flags, move the affected target's output aside and rebuild it. In the audit environment, the existing Linux debug output failed to link, while the release target compiled and linked successfully. That failure does not establish a source-level regression.
 
 ## Validation status

@@ -119,16 +119,31 @@ class SyncEngineTest(unittest.TestCase):
         self.sync("--apply")
         self.assertEqual(self.git("show", "engine:assets/fnf/data/characterList.txt"), b"bf\ndad\ngf\n")
 
-    def test_private_repository_files_are_omitted(self):
+    def test_private_workflow_is_omitted_but_author_note_is_published(self):
         self.write(".github/workflows/sync-engine.yml", "private workflow\n")
-        self.write("READ IT OR IDK.md", "private development note\n")
+        self.write("READ IT OR IDK.md", "important author note\n")
         self.write(".github/workflows/main.yml", "shared build workflow\n")
         self.commit("repository metadata")
         self.sync("--apply")
         files = self.git("ls-tree", "-r", "--name-only", "engine")
         self.assertNotIn(b".github/workflows/sync-engine.yml", files)
-        self.assertNotIn(b"READ IT OR IDK.md", files)
+        self.assertIn(b"READ IT OR IDK.md", files)
+        self.assertEqual(self.git("show", "engine:READ IT OR IDK.md"), b"important author note\n")
         self.assertIn(b".github/workflows/main.yml", files)
+
+    def test_sync_restores_note_from_previously_filtered_snapshot(self):
+        self.write("READ IT OR IDK.md", "important author note\n")
+        self.commit("author note")
+        source = self.git("rev-parse", "main").decode().strip()
+        self.sync("--apply")
+        self.git("checkout", "engine")
+        self.git("rm", "READ IT OR IDK.md")
+        self.commit("previous projection without note\n\nOasis-Source: " + source)
+        previous = self.git("rev-parse", "engine").strip()
+        self.git("checkout", "main")
+        self.sync("--apply")
+        self.assertEqual(self.git("rev-parse", "engine^").strip(), previous)
+        self.assertEqual(self.git("show", "engine:READ IT OR IDK.md"), b"important author note\n")
 
     def test_reset_history_is_preview_only_without_apply(self):
         self.sync("--apply")

@@ -10,7 +10,7 @@ synchronizing. `characterList.txt` contains only bundled base characters;
 
 The projection also excludes `assets/custom/oasis/` and `example_mods/` and
 removes Oasis entries from mod activation and priority configuration. The private
-sync workflow and personal development note are omitted from the engine tree.
+sync workflow is omitted. The author's `READ IT OR IDK.md` note is included.
 
 Normal synchronization preserves the target history. To prepare the first public
 engine snapshot without any private source history, preview and then apply:

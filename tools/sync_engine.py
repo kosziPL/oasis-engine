@@ -15,7 +15,7 @@ import tempfile
 
 MOD_PREFIX = b"assets/custom/oasis/"
 EXCLUDED_PREFIXES = (MOD_PREFIX, b"example_mods/")
-EXCLUDED_PATHS = {b"READ IT OR IDK.md", b".github/workflows/sync-engine.yml"}
+EXCLUDED_PATHS = {b".github/workflows/sync-engine.yml"}
 OVERRIDES_PREFIX = b"tools/engine_overrides/assets/fnf/"
 TRAILER = "Oasis-Source: "
 
@@ -31,7 +31,9 @@ def revision(ref):
     return git("rev-parse", "--verify", ref + "^{commit}").stdout.decode().strip()
 
 
-def projected_tree(source, legacy=False):
+def projected_tree(source, legacy=False, excluded_paths=None):
+    if excluded_paths is None:
+        excluded_paths = EXCLUDED_PATHS
     # A private index leaves staged and unstaged user changes untouched.
     with tempfile.TemporaryDirectory(prefix="oasis-engine-") as directory:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(directory) / "index"))
@@ -39,7 +41,7 @@ def projected_tree(source, legacy=False):
         paths = git("ls-files", "-z", env=env).stdout.split(b"\0")
         prefixes = (MOD_PREFIX,) if legacy else EXCLUDED_PREFIXES
         removed = [path for path in paths if
-                   (not legacy and path in EXCLUDED_PATHS) or any(
+                   (not legacy and path in excluded_paths) or any(
                        path == prefix[:-1] or path.startswith(prefix) for prefix in prefixes)]
         if removed:
             git("update-index", "--force-remove", "-z", "--stdin",
@@ -98,6 +100,8 @@ def sync(source_ref, target, apply=False, reset_history=False):
                 raise ValueError("Source history was rewritten or is older than the last sync")
             old_tree = git("rev-parse", previous + "^{tree}").stdout.decode().strip()
             if (old_tree != projected_tree(last_source)
+                    and old_tree != projected_tree(
+                        last_source, excluded_paths=EXCLUDED_PATHS | {b"READ IT OR IDK.md"})
                     and old_tree != projected_tree(last_source, legacy=True)):
                 raise ValueError("Engine has independent changes; move them to main before syncing")
         elif git("merge-base", "--is-ancestor", previous, source, check=False).returncode:

@@ -12,6 +12,8 @@
 
 Oasis Engine is a standalone engine for creating and running Friday Night Funkin' mods. [kosziPL/oasis-engine](https://github.com/kosziPL/oasis-engine) is the official source for engine code, documentation, releases, and issue tracking.
 
+Read [a personal note from Koszi](READ%20IT%20OR%20IDK.md) about the project's history and current direction.
+
 ## What makes Oasis different?
 
 ### More characters, one chart

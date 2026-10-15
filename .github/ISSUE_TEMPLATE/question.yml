@@ -1,0 +1,11 @@
+name: Oasis Engine question
+description: Ask about Oasis Engine behavior or development.
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Include your engine version and relevant context. Use the bug report form for a reproducible failure.
+    validations:
+      required: true

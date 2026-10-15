@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "lix": "^17.0.4-alpha.0"
+  },
+  "allowScripts": {
+    "lix@17.0.4-alpha.0": true
+  }
+}

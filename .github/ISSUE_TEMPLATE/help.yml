@@ -1,0 +1,35 @@
+name: Oasis Engine help
+description: Get help building, configuring, or modding Oasis Engine.
+labels: [help wanted]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Oasis Engine version or commit
+      description: Use the release tag or commit from https://github.com/kosziPL/oasis-engine.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other experimental target (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: task
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: attempts
+    attributes:
+      label: Steps tried and results
+      description: Include relevant commands, errors, and the documentation you followed. For build problems, include Haxe and library versions.
+    validations:
+      required: true

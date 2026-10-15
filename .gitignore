@@ -1,0 +1,42 @@
+### FNF-Specific
+# File used for the NG API. Should not be shared with others.
+APIStuff.hx
+art/build_x32-officialrelease.bat
+art/build_x64-officialrelease.bat
+art/test_x64-debug-officialrelease.bat
+crash/
+dump/
+
+### Node.js
+node_modules/
+
+### Build Outputs
+export/
+export/*
+P-Slice/*
+
+### VS Code & IDEs
+.vscode/*
+*.code-workspace
+.history
+.ionide
+# Keep essential VS Code configs
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+### Local libraries
+.haxelib/
+.haxelib.zip
+*.bak*
+
+### System & Temp Files
+.DS_Store
+Thumbs.db
+
+# Local caches and editor temporary files
+*.bson
+*.swp
+*.swo
+*~

@@ -1,0 +1,272 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main, engine, experimental, master ]
+    tags: [ "v*", "*" ]
+  pull_request:
+    branches: [ main, engine, experimental, master ]
+  workflow_dispatch:
+
+jobs:
+  buildLinux:
+    name: Build Linux
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Haxe
+        uses: krdlab/setup-haxe@v1
+        with:
+          haxe-version: 4.2.5
+
+      - name: Restore Build & Library Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/haxelib
+            export/release/linux/obj
+            export/release/linux/haxe
+          key: linux-build-cache-${{ hashFiles('Project.xml') }}-${{ github.sha }}
+          restore-keys: |
+            linux-build-cache-${{ hashFiles('Project.xml') }}-
+            linux-build-cache-
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvlc-dev libvlccore-dev libglu1-mesa-dev libgl1-mesa-dev g++-multilib gcc-multilib
+
+      - name: Configure Haxelib and Install Dependencies
+        run: |
+          mkdir -p ~/haxelib
+          haxelib setup ~/haxelib
+          rm -rf .haxelib
+          haxelib install hxcpp 4.3.2 --always --quiet
+          haxelib install lime 7.9.0 --always
+          haxelib install openfl 9.2.1 --always
+          haxelib install flixel 4.11.0 --always
+          haxelib install flixel-addons 2.11.0 --always
+          haxelib install flixel-ui 2.4.0 --always
+          haxelib install hscript 2.5.0 --always
+          haxelib install tjson 1.4.0 --always
+          haxelib install hxjsonast 1.1.0 --always
+          haxelib install bson 0.1.0 --always
+          haxelib install hxCodec 2.5.1 --always
+          haxelib git linc_luajit https://github.com/superpowers04/linc_luajit --always
+          haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex --always
+          haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc --always
+          haxelib set lime 7.9.0
+          haxelib set openfl 9.2.1
+          haxelib set flixel 4.11.0
+          haxelib set flixel-addons 2.11.0
+          haxelib set flixel-ui 2.4.0
+          haxelib set hxcpp 4.3.2
+
+      - name: Setup Discord RPC Submodules & Fixes
+        run: |
+          DISCORD_PATH=$(haxelib path discord_rpc | grep -v '^\-' | head -n 1)
+          echo "Configuring discord_rpc at $DISCORD_PATH"
+          cd "$DISCORD_PATH"
+          git submodule update --init --recursive
+          if [ -f "lib/rapidjson/include/rapidjson/document.h" ]; then
+            sed -i 's/GenericStringRef& operator=(const GenericStringRef\& rhs) { s = rhs.s; length = rhs.length; }/\/\/ GenericStringRef\& operator=(const GenericStringRef\& rhs) { s = rhs.s; length = rhs.length; }/' lib/rapidjson/include/rapidjson/document.h || true
+          fi
+          cd -
+
+      - name: Compile Linux
+        run: haxelib run lime build linux -final
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ hashFiles('assets/custom/oasis/pack.json') != '' && 'JkbKosziOasis' || 'OasisEngine' }}-Linux
+          path: export/release/linux/bin
+          if-no-files-found: error
+
+  buildWindows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Haxe
+        uses: krdlab/setup-haxe@v1
+        with:
+          haxe-version: 4.2.5
+
+      - name: Restore Build & Library Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/haxelib
+            export/release/windows/obj
+            export/release/windows/haxe
+          key: windows-build-cache-${{ hashFiles('Project.xml') }}-${{ github.sha }}
+          restore-keys: |
+            windows-build-cache-${{ hashFiles('Project.xml') }}-
+            windows-build-cache-
+
+      - name: Configure Haxelib and Install Dependencies
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "C:\haxelib"
+          haxelib setup C:/haxelib
+          Remove-Item -Recurse -Force ".haxelib" -ErrorAction SilentlyContinue
+          haxelib install hxcpp 4.3.2 --always --quiet
+          haxelib install lime 7.9.0 --always
+          haxelib install openfl 9.2.1 --always
+          haxelib install flixel 4.11.0 --always
+          haxelib install flixel-addons 2.11.0 --always
+          haxelib install flixel-ui 2.4.0 --always
+          haxelib install hscript 2.5.0 --always
+          haxelib install tjson 1.4.0 --always
+          haxelib install hxjsonast 1.1.0 --always
+          haxelib install bson 0.1.0 --always
+          haxelib install hxCodec 2.5.1 --always
+          haxelib git linc_luajit https://github.com/superpowers04/linc_luajit --always
+          haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex --always
+          haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc --always
+          haxelib set lime 7.9.0
+          haxelib set openfl 9.2.1
+          haxelib set flixel 4.11.0
+          haxelib set flixel-addons 2.11.0
+          haxelib set flixel-ui 2.4.0
+          haxelib set hxcpp 4.3.2
+
+      - name: Setup Discord RPC Submodules & Fixes
+        shell: powershell
+        run: |
+          $discordPath = (haxelib path discord_rpc | Select-String -NotMatch '^-' | Select-Object -First 1).ToString().Trim()
+          Write-Host "Configuring discord_rpc at $discordPath"
+          Push-Location $discordPath
+          git submodule update --init --recursive
+          $docPath = Join-Path $discordPath "lib\rapidjson\include\rapidjson\document.h"
+          if (Test-Path $docPath) {
+            (Get-Content $docPath) -replace 'GenericStringRef& operator=\(const GenericStringRef& rhs\) \{ s = rhs\.s; length = rhs\.length; \}', '// GenericStringRef& operator=(const GenericStringRef& rhs) { s = rhs.s; length = rhs.length; }' | Set-Content $docPath
+          }
+          Pop-Location
+
+      - name: Compile Windows
+        shell: cmd
+        run: haxelib run lime build windows -final
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ hashFiles('assets/custom/oasis/pack.json') != '' && 'JkbKosziOasis' || 'OasisEngine' }}-Windows
+          path: export/release/windows/bin
+          if-no-files-found: error
+
+  buildMac:
+    name: Build macOS
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Haxe
+        uses: krdlab/setup-haxe@v2
+        with:
+          haxe-version: 4.2.5
+
+      - name: Restore Build & Library Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/haxelib
+            export/release/macos/obj
+            export/release/macos/haxe
+          key: macos-build-cache-${{ hashFiles('Project.xml') }}-${{ github.sha }}
+          restore-keys: |
+            macos-build-cache-${{ hashFiles('Project.xml') }}-
+            macos-build-cache-
+
+      - name: Configure Haxelib and Install Dependencies
+        run: |
+          mkdir -p ~/haxelib
+          haxelib setup ~/haxelib
+          rm -rf .haxelib
+
+          HAXELIB_CMD="haxelib -R http://lib.haxe.org/"
+          $HAXELIB_CMD install hxcpp 4.3.2 --always --quiet
+          $HAXELIB_CMD install lime 7.9.0 --always
+          $HAXELIB_CMD install openfl 9.2.1 --always
+          $HAXELIB_CMD install flixel 4.11.0 --always
+          $HAXELIB_CMD install flixel-addons 2.11.0 --always
+          $HAXELIB_CMD install flixel-ui 2.4.0 --always
+          $HAXELIB_CMD install hscript 2.5.0 --always
+          $HAXELIB_CMD install tjson 1.4.0 --always
+          $HAXELIB_CMD install hxjsonast 1.1.0 --always
+          $HAXELIB_CMD install bson 0.1.0 --always
+          $HAXELIB_CMD install hxCodec 2.5.1 --always
+          $HAXELIB_CMD git linc_luajit https://github.com/superpowers04/linc_luajit --always
+          $HAXELIB_CMD git hscript-ex https://github.com/ianharrigan/hscript-ex --always
+          $HAXELIB_CMD git discord_rpc https://github.com/Aidan63/linc_discord-rpc --always
+
+          haxelib set lime 7.9.0
+          haxelib set openfl 9.2.1
+          haxelib set flixel 4.11.0
+          haxelib set flixel-addons 2.11.0
+          haxelib set flixel-ui 2.4.0
+          haxelib set hxcpp 4.3.2
+
+      - name: Setup Discord RPC Submodules & Fixes
+        run: |
+          DISCORD_PATH=$(haxelib path discord_rpc | grep -v '^\-' | head -n 1)
+          echo "Configuring discord_rpc at $DISCORD_PATH"
+          cd "$DISCORD_PATH"
+          git submodule update --init --recursive
+          python3 -c '
+          import os
+          path = "lib/rapidjson/include/rapidjson/document.h"
+          if os.path.exists(path):
+              with open(path, "r") as f:
+                  content = f.read()
+              content = content.replace("GenericStringRef& operator=(const GenericStringRef& rhs) { s = rhs.s; length = rhs.length; }", "// GenericStringRef& operator=(const GenericStringRef& rhs) { s = rhs.s; length = rhs.length; }")
+              with open(path, "w") as f:
+                  f.write(content)
+          '
+          cd -
+
+      - name: Compile macOS
+        run: haxelib run lime build mac -final
+
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ hashFiles('assets/custom/oasis/pack.json') != '' && 'JkbKosziOasis' || 'OasisEngine' }}-macOS
+          path: export/release/macos/bin
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [buildLinux, buildWindows, buildMac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package Archives
+        run: |
+          cd artifacts
+          for directory in */; do
+            artifact="${directory%/}"
+            (cd "$directory" && zip -r "../$artifact.zip" .)
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,47 @@
+name: Oasis Engine bug report
+description: Report a reproducible problem in Oasis Engine.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Oasis Engine version or commit
+      description: Use the release tag or commit from https://github.com/kosziPL/oasis-engine.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other experimental target (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the song or editor, settings, and a minimal example when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: modifications
+    attributes:
+      label: Mods and source changes
+      description: State whether this happens in an unmodified engine build. List installed mods or relevant source edits.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Include relevant crash or terminal output and screenshots. Remove credentials and private content before posting publicly.

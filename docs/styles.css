@@ -1,0 +1,25 @@
+:root {
+    color-scheme: dark;
+    font-family: system-ui, sans-serif;
+    line-height: 1.65;
+    color: #e8f2f0;
+    background: #10201e;
+}
+body { margin: 0; }
+main { max-width: 1040px; margin: auto; padding: 3rem 1.25rem; }
+h1, h2 { line-height: 1.15; color: #ffffff; }
+h1 { font-size: clamp(2.5rem, 8vw, 4.5rem); margin: 0.5rem 0 1.25rem; }
+h2 { font-size: 1.65rem; }
+section { margin-top: 3rem; }
+a { color: #9aead3; text-underline-offset: 0.2em; }
+a:hover { color: #ffffff; }
+a:focus-visible { outline: 2px solid #9aead3; outline-offset: 4px; }
+.eyebrow { color: #9aead3; letter-spacing: 0.08em; text-transform: uppercase; }
+.notice { padding: 1rem; border-left: 3px solid #e7c780; background: #20312d; }
+figure { margin: 1.5rem 0; }
+img { display: block; width: 100%; height: auto; border-radius: 0.5rem; }
+figcaption, footer { color: #bdd1cb; font-size: 0.95rem; }
+figcaption { margin-top: 0.5rem; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 1.5rem; }
+.gallery figure { margin: 0; }
+footer { border-top: 1px solid #456259; margin-top: 3rem; padding-top: 1rem; }

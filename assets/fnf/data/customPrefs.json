@@ -1,0 +1,6 @@
+{
+    "load_tutorial": true,
+    "load_weeks": true,
+    "default_note_asset_name": "NOTE_assets",
+    "title_tempo": 102
+}

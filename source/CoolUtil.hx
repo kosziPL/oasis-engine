@@ -101,7 +101,7 @@ class CoolUtil
 
 		if(foundDifficulties.length == 0) {
 			// Fallback to defaults
-			return defaultDifficulties.copy();
+			return [];
 		}
 		
 		// Sort the difficulties: Easy -> Normal -> Hard -> Custom

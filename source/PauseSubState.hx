@@ -77,22 +77,38 @@ class PauseSubState extends MusicBeatSubstate
 		bg.scrollFactor.set();
 		add(bg);
 
-		var levelInfo:FlxText = new FlxText(20, 15, 0, "", 32);
+		var levelInfo:FlxText = new FlxText(20, 20, FlxG.width * 0.55 - 40, "", 32);
 		levelInfo.text += PlayState.SONG.song;
 		levelInfo.scrollFactor.set();
 		levelInfo.setFormat(Paths.font("vcr.ttf"), 32);
 		levelInfo.updateHitbox();
 		add(levelInfo);
 
-		var levelAuthor:FlxText = new FlxText(20, 15, 0, "", 32);
-		levelAuthor.text += PlayState.SONG.authors;
+		var author = PlayState.SONG.authors != null ? StringTools.trim(PlayState.SONG.authors) : "";
+		var hasAuthor = author.length > 0 && author.toLowerCase() != "null";
+		var levelAuthor:FlxText = new FlxText(20, levelInfo.y + levelInfo.height + 4, levelInfo.fieldWidth, "", 32);
+		levelAuthor.text = hasAuthor ? author : "";
+		levelAuthor.visible = hasAuthor;
 		levelAuthor.scrollFactor.set();
 		levelAuthor.setFormat(Paths.font("vcr.ttf"), 32);
 		levelAuthor.updateHitbox();
 		add(levelAuthor);
 
+		var featuredArtists = PlayState.SONG.featuredArtists;
+		var featLevelArtist:FlxText = new FlxText(levelAuthor.x, levelAuthor.y + levelAuthor.height + 4, levelInfo.fieldWidth, "", 20);
+		featLevelArtist.text = hasAuthor && featuredArtists != null && featuredArtists.length > 0
+			? "(feat. " + featuredArtists.join(", ") + ")" : "";
+		featLevelArtist.scrollFactor.set();
+		featLevelArtist.setFormat(Paths.font("vcr.ttf"), 20);
+		featLevelArtist.visible = featLevelArtist.text.length > 0;
+		featLevelArtist.updateHitbox();
+		add(featLevelArtist);
+
 		var levelDifficulty:FlxText = new FlxText(20, 15 + 32, 0, "", 32);
-		levelDifficulty.text += CoolUtil.difficultyString();
+		var difficultyName = PlayState.storyDifficulty >= 0 && PlayState.storyDifficulty < CoolUtil.difficulties.length
+			? CoolUtil.difficulties[PlayState.storyDifficulty] : null;
+		levelDifficulty.text = difficultyName != null ? StringTools.trim(difficultyName).toUpperCase() : "";
+		levelDifficulty.visible = levelDifficulty.text.length > 0;
 		levelDifficulty.scrollFactor.set();
 		levelDifficulty.setFormat(Paths.font('vcr.ttf'), 32);
 		levelDifficulty.updateHitbox();
@@ -122,24 +138,34 @@ class PauseSubState extends MusicBeatSubstate
 		chartingText.visible = PlayState.chartingMode;
 		add(chartingText);
 
-		blueballedTxt.alpha = 0;
-		levelDifficulty.alpha = 0;
-		levelInfo.alpha = 0;
-
-		levelInfo.x = FlxG.width - (levelInfo.width + 20);
-		levelDifficulty.x = FlxG.width - (levelDifficulty.width + 20);
+		// Credits on the left; statistics form a separate stack on the right.
 		blueballedTxt.x = FlxG.width - (blueballedTxt.width + 20);
+		blueballedTxt.y = 20;
+		levelDifficulty.x = FlxG.width - (levelDifficulty.width + 20);
+		levelDifficulty.y = blueballedTxt.y + blueballedTxt.height + 6;
+		practiceText.y = levelDifficulty.visible ? levelDifficulty.y + levelDifficulty.height + 12
+			: blueballedTxt.y + blueballedTxt.height + 12;
 
 		FlxTween.tween(bg, {alpha: 0.6}, 0.4, {ease: FlxEase.quartInOut});
-		FlxTween.tween(levelInfo, {alpha: 1, y: 20}, 0.4, {ease: FlxEase.quartInOut, startDelay: 0.3});
-		FlxTween.tween(levelDifficulty, {alpha: 1, y: levelDifficulty.y + 5}, 0.4, {ease: FlxEase.quartInOut, startDelay: 0.5});
-		FlxTween.tween(blueballedTxt, {alpha: 1, y: blueballedTxt.y + 5}, 0.4, {ease: FlxEase.quartInOut, startDelay: 0.7});
+		animatePauseText(levelInfo, 0.3);
+		if (hasAuthor) animatePauseText(levelAuthor, 0.4);
+		if (featLevelArtist.visible) animatePauseText(featLevelArtist, 0.5);
+		animatePauseText(blueballedTxt, 0.5);
+		if (levelDifficulty.visible) animatePauseText(levelDifficulty, 0.7);
 
 		grpMenuShit = new FlxTypedGroup<Alphabet>();
 		add(grpMenuShit);
 
 		regenMenu();
 		cameras = [FlxG.cameras.list[FlxG.cameras.list.length - 1]];
+	}
+
+	function animatePauseText(text:FlxText, delay:Float):Void
+	{
+		var targetY = text.y;
+		text.y -= 5;
+		text.alpha = 0;
+		FlxTween.tween(text, {alpha: 1, y: targetY}, 0.4, {ease: FlxEase.quartInOut, startDelay: delay});
 	}
 
 	var holdTime:Float = 0;

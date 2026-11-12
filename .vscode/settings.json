@@ -1,0 +1,25 @@
+{
+    "lime.projectFile": "Project.xml",
+    "lime.defaultTargetConfiguration": "Linux",
+    "lime.executable": "bash tools/lime.sh",
+    "haxe.executable": "node_modules/.bin/haxe",
+    "haxelib.executable": "node_modules/.bin/haxelib",
+    "haxe.enableDiagnostics": true,
+    "files.autoSaveDelay": 1000,
+    "files.watcherExclude": {
+        "**/.haxelib/**": true,
+        "**/export/**": true
+    },
+    "[haxe]": {
+        "editor.quickSuggestionsDelay": 250,
+        "editor.quickSuggestions": {
+            "other": "on",
+            "comments": "off",
+            "strings": "off"
+        },
+        "editor.suggestOnTriggerCharacters": true,
+        "editor.snippetSuggestions": "top",
+        "editor.tabCompletion": "on",
+        "editor.parameterHints.enabled": true
+    }
+}

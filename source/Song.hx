@@ -32,6 +32,7 @@ typedef SwagSong =
 	var validScore:Bool;
 
 	var authors:Null<String>; // Required for JSON parsing/saving support
+	@:optional var featuredArtists:Null<Array<String>>;
 	@:optional var gameOverChar:Null<String>;
 	@:optional var useCameraEditor:Null<Bool>;
 }
@@ -68,6 +69,7 @@ class Song
 
 	private static function onLoadJson(songJson:Dynamic) // Convert old charts to newest format
 	{
+		songJson.featuredArtists = parseFeaturedArtists(songJson.featuredArtists);
 		if(songJson.gfVersion == null)
 		{
 			songJson.gfVersion = songJson.player3;
@@ -97,6 +99,28 @@ class Song
 				}
 			}
 		}
+	}
+
+	/** JSON accepts a comma-separated string or a string array; runtime uses an array or null. */
+	public static function parseFeaturedArtists(value:Dynamic):Null<Array<String>>
+	{
+		if (value == null) return null;
+		var entries:Array<Dynamic>;
+		if (Std.isOfType(value, String))
+			entries = cast (cast value:String).split(',');
+		else if (Std.isOfType(value, Array))
+			entries = cast value;
+		else
+			return null;
+
+		var artists:Array<String> = [];
+		for (entry in entries)
+		{
+			if (!Std.isOfType(entry, String)) continue;
+			var name = (cast entry:String).trim();
+			if (name.length > 0) artists.push(name);
+		}
+		return artists.length > 0 ? artists : null;
 	}
 
 	public function new(song, notes, bpm)
@@ -155,6 +179,7 @@ class Song
 	public static function parseJSONshit(rawJson:String):SwagSong
 	{
 		var swagShit:SwagSong = cast Json.parse(rawJson).song;
+		swagShit.featuredArtists = parseFeaturedArtists(Reflect.field(swagShit, 'featuredArtists'));
 		swagShit.validScore = true;
 		return swagShit;
 	}

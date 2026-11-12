@@ -44,6 +44,8 @@ typedef AnimArray = {
 	var loop:Bool;
 	var indices:Array<Int>;
 	var offsets:Array<Int>;
+	@:optional var sustain_interval_enabled:Null<Bool>;
+	@:optional var sustain_interval:Null<Float>; // Seconds added to the fixed 150 BPM cadence; negative values speed it up.
 }
 
 class Character extends FlxSprite
@@ -82,6 +84,15 @@ class Character extends FlxSprite
 	public var character_script:String = "";
 
 	public static var DEFAULT_CHARACTER:String = 'bf'; //In case a character is missing, it will use BF on its place
+
+	public var startedDeath:Bool = false;
+	// One sixteenth note at 100 BPM: fixed real-time cadence, independent of song BPM.
+	public static inline var SUSTAIN_BASE_INTERVAL:Float = 60.0 / 100.0 / 4.0;
+	var sustainRepeatName:Null<String> = null;
+	var sustainRepeatInterval:Float = SUSTAIN_BASE_INTERVAL;
+	var sustainActivity:Float = 0;
+	var sustainAnimTimer:Float = 0;
+
 	public function new(x:Float, y:Float, ?character:String = 'bf', ?isPlayer:Bool = false)
 	{
 		super(x, y);
@@ -262,8 +273,46 @@ class Character extends FlxSprite
 
 	override function update(elapsed:Float)
 	{
+		if (sustainRepeatName != null)
+		{
+			sustainActivity -= elapsed;
+			if (sustainActivity <= 0 || animation.curAnim == null || animation.curAnim.name != sustainRepeatName)
+				sustainRepeatName = null;
+			else
+			{
+				sustainAnimTimer += elapsed;
+				if (sustainAnimTimer >= sustainRepeatInterval)
+				{
+					var name = sustainRepeatName;
+					var remainder = sustainAnimTimer % sustainRepeatInterval;
+					var activity = sustainActivity;
+					playAnim(name, true);
+					sustainRepeatName = name;
+					sustainActivity = activity;
+					sustainAnimTimer = remainder;
+				}
+			}
+		}
 		if(!debugMode && animation.curAnim != null)
 		{
+			if (isPlayer) {
+				if (animation.curAnim.name.startsWith('sing'))
+				{
+					holdTimer += elapsed;
+				}
+				else
+					holdTimer = 0;
+
+				if (animation.curAnim.name.endsWith('miss') && animation.curAnim.finished && !debugMode)
+				{
+					playAnim('idle', true, false, 10);
+				}
+
+				if (animation.curAnim.name == 'firstDeath' && animation.curAnim.finished && startedDeath)
+				{
+					playAnim('deathLoop');
+				}
+			}
 			if(heyTimer > 0)
 			{
 				heyTimer -= elapsed * PlayState.instance.playbackRate;
@@ -343,6 +392,39 @@ class Character extends FlxSprite
 		}
 	}
 
+	public function playSingAnim(name:String, isSustain:Bool):Void
+	{
+		if (!isSustain)
+		{
+			playAnim(name, true);
+			return;
+		}
+		var repeat = false;
+		var adjustment:Float = 0;
+		for (config in animationsArray)
+		{
+			if (config.anim != name) continue;
+			repeat = config.sustain_interval_enabled == true;
+			if (config.sustain_interval != null && Math.isFinite(config.sustain_interval))
+				adjustment = config.sustain_interval;
+			break;
+		}
+		// A direction change is immediate; same-direction segments never restart the animation themselves.
+		if (animation.curAnim == null || animation.curAnim.name != name)
+			playAnim(name, true);
+		if (!repeat)
+		{
+			sustainRepeatName = null;
+			return;
+		}
+		if (sustainRepeatName != name) sustainAnimTimer = 0;
+		sustainRepeatName = name;
+		sustainRepeatInterval = Math.max(0.01, SUSTAIN_BASE_INTERVAL + adjustment);
+		// BPM determines how long we wait for the next segment, never the animation cadence.
+		var pitch = FlxG.sound.music != null ? Math.max(0.01, FlxG.sound.music.pitch) : 1;
+		sustainActivity = Math.max(0.05, Conductor.stepCrochet / 1000 / pitch) + 0.03;
+	}
+
 	public function playAnim(AnimName:String, Force:Bool = false, Reversed:Bool = false, Frame:Int = 0):Void
 	{
 		specialAnim = false;
@@ -351,6 +433,9 @@ class Character extends FlxSprite
 			AnimName = 'danceLeft' + idleSuffix;
 		}
 		animation.play(AnimName, Force, Reversed, Frame);
+		sustainAnimTimer = 0;
+		sustainRepeatName = null;
+
 
 		var daOffset = animOffsets.get(AnimName);
 		if (animOffsets.exists(AnimName))

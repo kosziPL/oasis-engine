@@ -29,6 +29,8 @@
 				0
 			],
 			"anim": "singLEFT",
+			"sustain_interval_enabled": true,
+			"sustain_interval": 0,
 			"fps": 24,
 			"name": "BF LEFT NOTE",
 			"indices": []
@@ -51,6 +53,8 @@
 				0
 			],
 			"anim": "singUP",
+			"sustain_interval_enabled": true,
+			"sustain_interval": 0,
 			"fps": 24,
 			"name": "BF UP NOTE",
 			"indices": []
@@ -62,6 +66,8 @@
 				0
 			],
 			"anim": "singRIGHT",
+			"sustain_interval_enabled": true,
+			"sustain_interval": 0,
 			"fps": 24,
 			"name": "BF RIGHT NOTE",
 			"indices": []
@@ -84,6 +90,8 @@
 				0
 			],
 			"anim": "singDOWN",
+			"sustain_interval_enabled": true,
+			"sustain_interval": 0,
 			"fps": 24,
 			"name": "BF DOWN NOTE",
 			"indices": []

@@ -38,6 +38,13 @@ enum FreeplaySelectionState
 	DIFFICULTY;
 }
 
+private typedef SongUIBaseline = {
+	var axis:String;
+	var position:Float;
+	var alpha:Float;
+	var visible:Bool;
+}
+
 class FreeplayState extends MusicBeatState
 {
 	var songs:Array<SongMetadata> = [];
@@ -50,8 +57,9 @@ class FreeplayState extends MusicBeatState
 	var lerpScore:Int = 0;
 	var lerpRating:Float = 0;
 	var intendedScore:Int = 0;
+	var personalBestVisible:Bool = false;
 	var intendedRating:Float = 0;
-
+	
 	private var grpSongs:FlxTypedGroup<Alphabet>;
 	private var curPlaying:Int = -1;
 
@@ -60,6 +68,11 @@ class FreeplayState extends MusicBeatState
 	var bg:FlxSprite;
 	var intendedColor:Int = 0;
 	var colorTween:FlxTween;
+
+	// Canonical layout values are separate from the live, tweened sprite properties.
+	var songUIDefaults:Map<FlxSprite, SongUIBaseline> = new Map();
+	var songUITweens:Map<FlxSprite, FlxTween> = new Map();
+	var songUIEnabled:Bool = true;
 
 	private var fullWeekMap:Map<String, Array<SongMetadata>> = new Map();
 	private var fullWeekNames:Array<String> = [];
@@ -82,7 +95,7 @@ class FreeplayState extends MusicBeatState
 
 	private var grpDifficultySelect:FlxTypedGroup<FlxBasic>;
 	private var difficultyTitle:Alphabet;
-	private var grpDifficultyChoices:FlxTypedGroup<Alphabet>;
+	private var grpDifficultyChoices:FlxTypedGroup<FlxSprite>;
 	private var curDifficulty:Int = 2;
 
 	private static var lastDifficultyName:String = 'Hard';
@@ -101,6 +114,11 @@ class FreeplayState extends MusicBeatState
 	var playbackRateTxt:FlxText;
 
 	var playbackRate:Float = 1.0;
+
+	var difficultyLeftArrow:Alphabet;
+	var difficultyRightArrow:Alphabet;
+	var difficultySprite:FlxSprite;
+	var noDiffsText:FlxText;
 
 	public var songPercent:Float = 0;
 
@@ -192,18 +210,20 @@ class FreeplayState extends MusicBeatState
 
 		mainIcon = new HealthIcon('bf');
 		mainIcon.alpha = 0;
+		mainIcon.x = 40;
+		mainIcon.y = FlxG.height - mainIcon.height - 40;
 		songLayer.add(mainIcon);
 
 		grpDifficultySelect = new FlxTypedGroup<FlxBasic>();
 		grpDifficultySelect.visible = false;
 		songLayer.add(grpDifficultySelect);
 
-		var blackBG = new FlxSprite().makeGraphic(FlxG.width, FlxG.height, FlxColor.BLACK);
-		blackBG.alpha = 0.6;
-		grpDifficultySelect.add(blackBG);
-		difficultyTitle = new Alphabet(0, 80, "SONG", true);
+		difficultyTitle = new Alphabet(0, -80, "SONG", true);
 		grpDifficultySelect.add(difficultyTitle);
-		grpDifficultyChoices = new FlxTypedGroup<Alphabet>();
+		
+		// It would be a FlxSprite bcuz we're changing type to FlxSprite into Alphabet
+		// Problem is dumb, because I've changed type, but game's still not compiling
+		grpDifficultyChoices = new FlxTypedGroup<FlxSprite>();
 		grpDifficultySelect.add(grpDifficultyChoices);
 
 		grpCategories = new FlxTypedGroup<FlxBasic>();
@@ -225,7 +245,7 @@ class FreeplayState extends MusicBeatState
 		// Score text
 		scoreText = new FlxText(FlxG.width * 0.7, 5, 0, "", 32);
 		scoreText.setFormat(Paths.font("vcr.ttf"), 32, FlxColor.WHITE, RIGHT);
-		scoreBG = new FlxSprite(scoreText.x - 6, 0).makeGraphic(1, 66, 0xFF000000);
+		scoreBG = new FlxSprite(scoreText.x - 6, 0).makeGraphic(1, 46, 0xFF000000);
 		scoreBG.alpha = 0;
 		scoreText.alpha = 0;
 		songLayer.add(scoreBG);
@@ -263,7 +283,24 @@ class FreeplayState extends MusicBeatState
 		text.alpha = 0;
 		songLayer.add(text);
 
-		
+		noDiffsText = new FlxText(0, 0, 0, "Song doesn't have difficulties!");
+		noDiffsText.setFormat(Paths.font('vcr.ttf'), 20, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
+		noDiffsText.alpha = 0;
+		noDiffsText.screenCenter(Y);
+		grpDifficultySelect.add(noDiffsText);
+
+		difficultyLeftArrow = new Alphabet(0, 0, ">", true);
+		difficultyLeftArrow.alpha = 0;
+		grpDifficultySelect.add(difficultyLeftArrow);
+
+		difficultyRightArrow = new Alphabet(0, 0, "<", true);
+		difficultyRightArrow.alpha = 0;
+		grpDifficultySelect.add(difficultyRightArrow);
+
+		difficultySprite = new FlxSprite(0, 0);
+		difficultySprite.alpha = 0;
+		songLayer.add(difficultySprite);
+
 
 		createErrorScreen();
 
@@ -350,6 +387,9 @@ class FreeplayState extends MusicBeatState
 
 	function createSongSelectUI(fromLeft:Bool = true)
 	{
+		cancelSongUITweens();
+		songUIDefaults.clear();
+		songUIEnabled = true;
 		// Better category sorting system.
 
 		weekMap = new Map<String, Array<SongMetadata>>();
@@ -412,8 +452,9 @@ class FreeplayState extends MusicBeatState
 
 		FlxTween.tween(text, {x: 0, alpha: 1}, 0.35, {ease: FlxEase.expoOut});
 		FlxTween.tween(textBG, {x: 0, alpha: 0.6}, 0.35, {ease: FlxEase.expoOut});
-		FlxTween.tween(scoreText, {alpha: 1}, 0.35, {ease: FlxEase.expoOut});
-		FlxTween.tween(scoreBG, {alpha: 0.6}, 0.35, {ease: FlxEase.expoOut});
+		personalBestVisible = false;
+		scoreText.visible = false;
+		scoreBG.visible = false;
 		if (tabHintText != null) FlxTween.tween(tabHintText, {alpha: 1}, 0.35, {ease: FlxEase.expoOut});
 		if (leftArrow != null) FlxTween.tween(leftArrow, {alpha: 1}, 0.35, {ease: FlxEase.expoOut});
 		if (rightArrow != null) FlxTween.tween(rightArrow, {alpha: 1}, 0.35, {ease: FlxEase.expoOut});
@@ -421,11 +462,17 @@ class FreeplayState extends MusicBeatState
 		intendedColor = 0;
 		if (weekNames.length > 0)
 			rebuildSongList(0);
+
+		rememberSongUI(weekNameText, 'y', 75);
+		rememberSongUI(tabHintText, 'y', 0);
+		rememberSongUI(leftArrow, 'x', 20, 1, weekNames.length > 1);
+		rememberSongUI(rightArrow, 'x', FlxG.width - 60, 1, weekNames.length > 1);
 	}
 
 	override function update(elapsed:Float)
 	{
 		MainThreadDispatcher.pump();
+		updatePersonalBestVisibility();
 
 		if (isError)
 		{
@@ -548,7 +595,7 @@ class FreeplayState extends MusicBeatState
 					for (i in 0...grpSongs.members.length)
 					{
 						var item = grpSongs.members[i];
-						if (item == null)
+						if (item == null || !songUIEnabled || songUITweens.exists(item))
 							continue;
 						item.y = FlxMath.lerp(item.y, (FlxG.height * 0.45) + ((i - curSong) * 140), CoolUtil.boundTo(elapsed * 12, 0, 1));
 						var sw = widthCache.get(item.text);
@@ -625,17 +672,63 @@ class FreeplayState extends MusicBeatState
 
 						updateDifficulties();
 						
-						if (CoolUtil.difficulties.length > 1) {
+						if (CoolUtil.difficulties.length != 1) {
+							var selectedSong = grpSongs.members[curSong];
+							
 							curState = DIFFICULTY;
+							
 							openDifficultyMenu();
+							FlxTween.cancelTweensOf(selectedSong);
+							startDifficultyMarquee(selectedSong);
+
+							FlxTween.tween(
+								selectedSong,
+								{
+									x: 250, 
+									y: (FlxG.height / 2) - (selectedSong.height / 2)
+								},
+								0.3,
+								{
+									ease: FlxEase.expoOut
+								}
+							);
+
+							FlxTween.cancelTweensOf(mainIcon);
+
+							FlxTween.tween(
+								mainIcon,
+								{
+									x: 250 - mainIcon.width,
+									y: (FlxG.height - mainIcon.height) / 2
+								},
+								0.3,
+								{
+									ease: FlxEase.expoOut
+								}
+							);
+
+							if (difficultyTitle != null) {
+								var targetY = 80;
+
+								FlxTween.cancelTweensOf(difficultyTitle);
+
+								FlxTween.tween(
+									difficultyTitle,
+									{
+										y: targetY
+									},
+									0.3,
+									{
+										ease: FlxEase.expoOut
+									}
+								);
+							}
+
 							return;
 						} else if (CoolUtil.difficulties.length == 1) {
 							curDifficulty = 0;
 							lastDifficultyName = CoolUtil.difficulties[0];
-						} else {
-							curDifficulty = 0; // Fallback
 						}
-
 						cameFromPlay = true;
 						isTransitioning = true;
 						isConfirming = true;
@@ -657,6 +750,7 @@ class FreeplayState extends MusicBeatState
 								MainThreadDispatcher.runOnMain(function()
 								{
 									PlayState.SONG = loadedSong;
+									PlayState.storyDifficulty = diffToUse;
 									try
 									{
 										Reflect.setField(PlayState, "playbackRate", capturedRate);
@@ -684,6 +778,7 @@ class FreeplayState extends MusicBeatState
 						try
 						{
 							PlayState.SONG = Song.loadFromJson(Highscore.formatSong(songLowercase, diffToUse), songLowercase);
+							PlayState.storyDifficulty = diffToUse;
 							try
 							{
 								Reflect.setField(PlayState, "playbackRate", capturedRate);
@@ -775,7 +870,20 @@ class FreeplayState extends MusicBeatState
 						startSongPreview();
 					else if (FlxG.keys.justPressed.CONTROL)
 						openSubState(new GameplayChangersSubstate());
-				} // <-- Added closing brace for 'else if (subState == null && !isTransitioning)'
+
+					if (FlxG.keys.justPressed.R) {
+						if (CoolUtil.difficulties.length == 1) {
+							var songData = weekMap.get(weekNames[curWeek])[curSong];
+
+							openSubState(new ResetScoreSubState(
+								songData.songName,
+								curDifficulty,
+								songData.songCharacter
+							));
+							subStateClosed.add(sub -> changeDiff(0));
+						}
+					}
+				} // <-- Added closing brace for 'else if (subState == null && !isTransitioning)' -- SHUT THE FUCK UP STUPID AI, THIS INFO IS REALLY USEFUL
 
 				if (subState == null && !isTransitioning && FlxG.keys.justPressed.TAB)
 				{
@@ -788,27 +896,50 @@ class FreeplayState extends MusicBeatState
 				}
 
 				// Difficulty choosing has been removed from this mod, so I'll remove that later.
+				// Bro this comment lies LMAO. Now it's an engine so stfu >:D
+
 				case DIFFICULTY:
-						if (subState == null)
+					if (subState == null)
+					{
+						if (controls.UI_UP_P) {
+							FlxG.sound.play(Paths.sound('scrollMenu'), 0.4);
+							changeDiff(-1);
+						}
+						else if (controls.UI_DOWN_P) {
+							FlxG.sound.play(Paths.sound('scrollMenu'), 0.4);
+							changeDiff(1);
+						}
+
+						if (FlxG.keys.justPressed.R) {
+							if (CoolUtil.difficulties.length > 1) {
+								var songData = weekMap.get(weekNames[curWeek])[curSong];
+
+								openSubState(new ResetScoreSubState(
+									songData.songName,
+									curDifficulty,
+									songData.songCharacter
+								));
+								subStateClosed.add(sub -> changeDiff(0));
+							}
+						}
+
+						if (controls.ACCEPT)
 						{
-							if (controls.UI_UP_P)
-								changeDiff(-1);
-							else if (controls.UI_DOWN_P)
-								changeDiff(1);
-							if (controls.ACCEPT)
-							{
-								var curSongData:SongMetadata = weekMap.get(weekNames[curWeek])[curSong];
-								var songLowercase:String = Paths.formatToSongPath(curSongData.songName);
+							var curSongData:SongMetadata = weekMap.get(weekNames[curWeek])[curSong];
+							var songLowercase:String = Paths.formatToSongPath(curSongData.songName);
+							
+							if (CoolUtil.difficulties.length > 1) {
 								try
 								{
 									PlayState.SONG = Song.loadFromJson(Highscore.formatSong(songLowercase, curDifficulty), songLowercase);
+									PlayState.storyDifficulty = curDifficulty;
 									try
 									{
 										Reflect.setField(PlayState, "playbackRate", playbackRate);
 									}
 									catch (e:Dynamic)
-									{
-									}
+									{}
+									
 									cameFromPlay = true;
 									stopSongPreview(true);
 									FlxTransitionableState.skipNextTransIn = false;
@@ -819,14 +950,45 @@ class FreeplayState extends MusicBeatState
 								{
 									showErrorScreen(curSongData.songCharacter, curSongData.songName);
 								}
-							}
-							else if (controls.BACK)
-							{
-								FlxG.sound.play(Paths.sound('cancelMenu'));
-								curState = SONG;
-								closeDifficultyMenu();
+
 							}
 						}
+						else if (controls.BACK)
+						{
+							FlxG.sound.play(Paths.sound('cancelMenu'));
+							curState = SONG;
+							closeDifficultyMenu();
+							
+							FlxTween.cancelTweensOf(mainIcon);
+							FlxTween.tween(
+								mainIcon,
+								{
+									x: 50,
+									y: (FlxG.height - mainIcon.height) - 50
+								},
+								0.3,
+								{
+									ease: FlxEase.expoOut
+								}
+							);
+
+							if (difficultyTitle != null) {
+								var targetY = -80;
+											
+								FlxTween.cancelTweensOf(difficultyTitle);
+								FlxTween.tween(
+									difficultyTitle,
+									{
+										y: targetY
+									},
+									0.3,
+									{
+										ease: FlxEase.expoOut
+									}
+								);
+							}
+						}
+					}
 				}
 
 				if (curState == SONG && weekNames.length > 0 && weekNames[curWeek] != null)
@@ -834,15 +996,9 @@ class FreeplayState extends MusicBeatState
 					if (!isConfirming)
 					{
 						mainIcon.alpha = FlxMath.lerp(mainIcon.alpha, isError ? 0.05 : 1, elapsed * 15);
-						mainIcon.x = 40;
-						mainIcon.y = FlxG.height - mainIcon.height - 40;
 						var mult:Float = FlxMath.lerp(1, mainIcon.scale.x, CoolUtil.boundTo(1 - (elapsed * 9 * playbackRate), 0, 1));
 						mainIcon.scale.set(mult, mult);
 					}
-				}
-				else
-				{
-					mainIcon.alpha = 0;
 				}
 
 				super.update(elapsed);
@@ -1033,6 +1189,13 @@ class FreeplayState extends MusicBeatState
 
 		function destroySongSelectUI(exitToLeft:Bool = true, onFinish:Void->Void)
 		{
+			cancelSongUITweens();
+			if (difficultyLeftArrow != null) FlxTween.cancelTweensOf(difficultyLeftArrow);
+			if (difficultyRightArrow != null) FlxTween.cancelTweensOf(difficultyRightArrow);
+			if (grpDifficultyChoices != null)
+				for (choice in grpDifficultyChoices.members)
+					if (choice != null) FlxTween.cancelTweensOf(choice);
+			songUIDefaults.clear();
 			var offScreenX = exitToLeft ? -FlxG.width : FlxG.width;
 			if (weekNameText != null)
 				FlxTween.tween(weekNameText, {x: weekNameText.x + offScreenX, alpha: 0}, 0.2);
@@ -1127,6 +1290,10 @@ class FreeplayState extends MusicBeatState
 			while (grpSongs.members.length > 0)
 			{
 				var s = grpSongs.members[0];
+				var visibilityTween = songUITweens.get(s);
+				if (visibilityTween != null) visibilityTween.cancel();
+				songUITweens.remove(s);
+				songUIDefaults.remove(s);
 				grpSongs.remove(s, true);
 				s.destroy();
 			}
@@ -1145,6 +1312,9 @@ class FreeplayState extends MusicBeatState
 
 			if (leftArrow != null) leftArrow.visible = (weekNames.length > 1);
 			if (rightArrow != null) rightArrow.visible = (weekNames.length > 1);
+			rememberSongUI(leftArrow, 'x', 20, 1, weekNames.length > 1);
+			rememberSongUI(rightArrow, 'x', FlxG.width - 60, 1, weekNames.length > 1);
+			rememberSongUI(weekNameText, 'y', 75);
 
 			cacheWidth(nameToUse);
 			weekNameText.text = nameToUse;
@@ -1166,6 +1336,7 @@ class FreeplayState extends MusicBeatState
 				songText.x = songCenter + slideInX;
 				songText.y = (FlxG.height * 0.45) + ((i - curSong) * 140);
 				grpSongs.add(songText);
+				rememberSongUI(songText, 'x', songCenter, i == curSong ? 1 : 0.6);
 				var staggerDelay:Float = (direction == 0) ? (i * 0.04) : 0;
 				FlxTween.tween(songText, {x: songCenter, alpha: (i == curSong ? 1.0 : 0.6)}, 0.3, {
 					ease: FlxEase.expoOut,
@@ -1182,6 +1353,12 @@ class FreeplayState extends MusicBeatState
 
 		function updateSelection()
 		{
+			if (grpSongs != null)
+				for (i in 0...grpSongs.length)
+				{
+					var baseline = songUIDefaults.get(grpSongs.members[i]);
+					if (baseline != null) baseline.alpha = i == curSong ? 1 : 0.6;
+				}
 			if (weekNames.length == 0 || weekMap.get(weekNames[curWeek]) == null)
 				return;
 			var songData = weekMap.get(weekNames[curWeek])[curSong];
@@ -1207,7 +1384,8 @@ class FreeplayState extends MusicBeatState
 			}
 
 			updateDifficulties();
-			var checkDiff = (curDifficulty < 0) ? 0 : curDifficulty;
+			curDifficulty = Math.round(Math.max(0, CoolUtil.difficulties.indexOf(lastDifficultyName)));
+			var checkDiff = curDifficulty;
 			intendedScore = Highscore.getScore(songData.songName, checkDiff);
 			intendedRating = Highscore.getRating(songData.songName, checkDiff);
 		}
@@ -1239,47 +1417,125 @@ class FreeplayState extends MusicBeatState
 		function openDifficultyMenu()
 		{
 			grpDifficultySelect.visible = true;
+			difficultyTitle.visible = true;
 			setSongUIVisible(false);
-			var selectedSong:SongMetadata = weekMap.get(weekNames[curWeek])[curSong];
-			var songUpper = selectedSong.songName.toUpperCase();
+			var songUpper = "SELECT DIFFICULTY";
 			cacheWidth(songUpper);
-			difficultyTitle.text = songUpper;
+			difficultyTitle.text = songUpper;	// Trochę to oszukam bo kuźwa nie chce mi sie, ale tu wprowadzę już ten głupi tekst
 
 			var w = widthCache.get(songUpper);
 			if (w != null)
-				difficultyTitle.x = (FlxG.width - w) / 2;
+				difficultyTitle.x = (FlxG.width - w) / 2;	// TUTAHJ USTAWIAM X TEKTU NA ŚRODEK EKRANU
 
-			while (grpDifficultyChoices.members.length > 0)
+			while (grpDifficultyChoices.members.length > 0)	// To chyba kurna usuwa stare difficulties?
 			{
 				var c = grpDifficultyChoices.members[0];
+				FlxTween.cancelTweensOf(c);
 				grpDifficultyChoices.remove(c, true);
 				c.destroy();
 			}
+
 			updateDifficulties();
-			for (i in 0...CoolUtil.difficulties.length)
-			{
-				var diffName = CoolUtil.difficulties[i].toUpperCase();
-				cacheWidth(diffName);
-				var choiceText:Alphabet = new Alphabet(0, 0, diffName, true);
-				var dw = widthCache.get(diffName);
-				if (dw != null)
-					choiceText.x = (FlxG.width - dw) / 2;
-				choiceText.y = difficultyTitle.y + 110 + (i * 90);
-				grpDifficultyChoices.add(choiceText);
+			if (CoolUtil.difficulties.length > 0) {
+				for (i in 0...CoolUtil.difficulties.length)
+				{
+					var diffName = CoolUtil.difficulties[i].toUpperCase();
+					var diffImage = AssetHandler.getGraphic("menudifficulties/" + diffName.toLowerCase());
+
+					if (diffImage != null) {
+						var choiceText:FlxSprite = new FlxSprite(0, 0).loadGraphic(diffImage);
+						var targetX = (FlxG.width - 300) - (diffImage.width / 2);
+						choiceText.x = FlxG.width + 40;
+						choiceText.y = (FlxG.height / 2) + (i * 90) - ((CoolUtil.difficulties.length - 1) * 90 / 2);
+						grpDifficultyChoices.add(choiceText);
+
+						FlxTween.tween(choiceText, {x: targetX}, 0.3, {ease: FlxEase.expoOut});
+					} else {
+						var choiceText:FlxText = new FlxText(0, 0, 0, diffName);
+
+						choiceText.setFormat(
+							Paths.font("phantomDiff.ttf"),
+							60,
+							FlxColor.WHITE
+						);
+
+						var targetX = (FlxG.width - 300) - (choiceText.width / 2);
+						choiceText.x = FlxG.width + 40;
+						choiceText.y = (FlxG.height / 2) + (i * 90) - ((CoolUtil.difficulties.length - 1) * 90 / 2);
+						grpDifficultyChoices.add(choiceText);
+
+						FlxTween.tween(choiceText, {x: targetX}, 0.3, {ease: FlxEase.expoOut});
+					}
+				}
+				for (arrow in [difficultyLeftArrow, difficultyRightArrow])
+				{
+					FlxTween.cancelTweensOf(arrow);
+					arrow.visible = true;
+					arrow.alpha = 0;
+					arrow.x = FlxG.width + 40;
+				}
+				curDifficulty = Math.round(Math.max(0, CoolUtil.difficulties.indexOf(lastDifficultyName)));
+
+				changeDiff(0);
+			} else {
+				noDiffsText.alpha = 1;
+				noDiffsText.x = (FlxG.width - 20) - noDiffsText.width;
 			}
-			curDifficulty = Math.round(Math.max(0, CoolUtil.difficulties.indexOf(lastDifficultyName)));
-			changeDiff(0);
+		}
+
+		// Japierdziu I swear to god nigdy więcej vibe code'owania :sob:
+
+		// Jestem too lazy żeby zrobić hierarchię zmiennych, sorry
+		function startDifficultyMarquee(song:Alphabet):Void
+		{
+			if (CoolUtil.difficulties.length > 0) {
+				var right:Float = FlxG.width - 24;
+				for (choice in grpDifficultyChoices.members)
+				{
+					if (choice != null)
+						right = Math.min(right, FlxG.width - 300 - choice.width / 2 - 20 - difficultyLeftArrow.width - 24);
+				}
+				var textWidth = widthCache.get(song.text);
+				song.startMarquee(250, right, textWidth != null ? textWidth : song.width);
+			} else {
+				var right:Float = FlxG.width - 24;
+					
+				right = Math.min(right, FlxG.width - 300 - noDiffsText.width / 2 - 20);
+				var textWidth = widthCache.get(song.text);
+				song.startMarquee(250, right, textWidth != null ? textWidth : song.width);
+			}
 		}
 
 		function closeDifficultyMenu()
 		{
-			if (grpDifficultySelect != null)
-				grpDifficultySelect.visible = false;
+			if (grpSongs != null && grpSongs.members[curSong] != null)
+				grpSongs.members[curSong].stopMarquee();
+			// difficultyTitle.visible = false;     <--- it was breaking the tweening
+			noDiffsText.alpha = 0;
+			
+			for (choice in grpDifficultyChoices.members)
+			{
+				if (choice == null) continue;
+				FlxTween.cancelTweensOf(choice);
+				FlxTween.tween(choice, {x: FlxG.width + 40}, 0.3, {
+					ease: FlxEase.expoOut,
+					onComplete: function(_) { choice.visible = false; }
+				});
+			}
+			for (arrow in [difficultyLeftArrow, difficultyRightArrow])
+			{
+				FlxTween.cancelTweensOf(arrow);
+				FlxTween.tween(arrow, {x: FlxG.width + 40, alpha: 0}, 0.3, {
+					ease: FlxEase.expoOut,
+					onComplete: function(_) { arrow.visible = false; }
+				});
+			}
 			setSongUIVisible(true);
 		}
 
 		function changeDiff(change:Int = 0)
 		{
+			if (CoolUtil.difficulties.length == 0) return;
 			curDifficulty = FlxMath.wrap(curDifficulty + change, 0, CoolUtil.difficulties.length - 1);
 			lastDifficultyName = CoolUtil.difficulties[curDifficulty];
 			if (grpDifficultyChoices != null)
@@ -1288,6 +1544,22 @@ class FreeplayState extends MusicBeatState
 				{
 					if (grpDifficultyChoices.members[i] != null)
 						grpDifficultyChoices.members[i].alpha = (i == curDifficulty) ? 1 : 0.6;
+				}
+			}
+			var selected = grpDifficultyChoices.members[curDifficulty];
+			if (selected != null)
+			{
+				// Target coordinates, independent of the tile's entrance tween.
+				var tileX = FlxG.width - 300 - selected.width / 2;
+				var arrows = [difficultyLeftArrow, difficultyRightArrow];
+				var positions = [tileX - difficultyLeftArrow.width - 20, tileX + selected.width + 20];
+				for (i in 0...arrows.length)
+				{
+					var arrow = arrows[i];
+					FlxTween.cancelTweensOf(arrow);
+					var targetY = selected.y + (selected.height - arrow.height) / 2;
+					if (change == 0) arrow.y = targetY;
+					FlxTween.tween(arrow, {x: positions[i], y: targetY, alpha: 1}, 0.3, {ease: FlxEase.expoOut});
 				}
 			}
 			// Updating the highscore text during change a diff - Now it's just useless cause difficulty selection has been deleted
@@ -1301,6 +1573,9 @@ class FreeplayState extends MusicBeatState
 			var songData = weekMap.get(weekNames[curWeek])[curSong];
 			var songLowercase = Paths.formatToSongPath(songData.songName);
 			CoolUtil.difficulties = CoolUtil.getAvailableDifficulties(songLowercase);
+
+			if (CoolUtil.difficulties.length == 0)
+				return;
 
 			var weekFile:String = weekNames[curWeek];
 			if (weekFile == null || !WeekData.weeksLoaded.exists(weekFile))
@@ -1317,8 +1592,34 @@ class FreeplayState extends MusicBeatState
 						diffs.remove(diffs[i]);
 					i--;
 				}
-				if (diffs.length > 0)
-					CoolUtil.difficulties = diffs;
+				
+				CoolUtil.difficulties = diffs;
+			}
+		}
+
+		function updatePersonalBestVisibility():Void
+		{
+			if (scoreText == null || scoreBG == null) return;
+			var count = CoolUtil.difficulties.length;
+			var show = !isConfirming && !isError && weekNames.length > 0
+				&& ((curState == SONG && count == 1) || (curState == DIFFICULTY && count > 1));
+			if (show == personalBestVisible) return;
+			personalBestVisible = show;
+			var items:Array<FlxSprite> = [scoreText, scoreBG];
+			for (i in 0...items.length)
+			{
+				var item = items[i];
+				FlxTween.cancelTweensOf(item, ['alpha', 'y']);
+				if (show) item.visible = true;
+				FlxTween.tween(item, {
+					y: show ? (i == 0 ? 5 : 0) : -item.height - 20,
+					alpha: show ? (i == 0 ? 1 : 0.6) : 0
+				}, 0.35, {
+					ease: FlxEase.expoOut,
+					onComplete: function(_) {
+						if (!show && !personalBestVisible) item.visible = false;
+					}
+				});
 			}
 		}
 
@@ -1336,22 +1637,44 @@ class FreeplayState extends MusicBeatState
 			updateCategoryVisuals();
 		}
 
-		function setSongUIVisible(visible:Bool)
+		function rememberSongUI(item:FlxSprite, axis:String, position:Float, alpha:Float = 1, visible:Bool = true):Void
 		{
-			if (grpSongs != null)
-				grpSongs.visible = visible;
-			if (weekNameText != null)
-				weekNameText.visible = visible;
-			if (scoreText != null)
-				scoreText.visible = visible;
-			if (tabHintText != null)
-				tabHintText.visible = visible;
-			if (leftArrow != null)
-				leftArrow.visible = visible;
-			if (rightArrow != null)
-				rightArrow.visible = visible;
-			if (scoreBG != null)
-				scoreBG.visible = visible;
+			if (item != null) songUIDefaults.set(item, {axis: axis, position: position, alpha: alpha, visible: visible});
+		}
+
+		function cancelSongUITweens():Void
+		{
+			for (tween in songUITweens) tween.cancel();
+			songUITweens.clear();
+		}
+
+		function setSongUIVisible(enabled:Bool):Void
+		{
+			songUIEnabled = enabled;
+			if (grpSongs != null) grpSongs.visible = true;
+			var selectedSong = grpSongs != null && curSong >= 0 && curSong < grpSongs.length ? grpSongs.members[curSong] : null;
+			for (item => baseline in songUIDefaults)
+			{
+				var itemEnabled = enabled || item == selectedSong;
+				// Reversing a transition starts from the current pose, never from a new "default".
+				var previous = songUITweens.get(item);
+				if (previous != null) previous.cancel();
+				FlxTween.cancelTweensOf(item, [baseline.axis, 'alpha']);
+				if (itemEnabled) item.visible = baseline.visible;
+				var hiddenPosition = baseline.axis == 'y' ? -item.height - 20
+					: item == rightArrow ? FlxG.width + item.width : -item.width - 40;
+				var properties:Dynamic = {alpha: itemEnabled ? baseline.alpha : 0};
+				Reflect.setField(properties, baseline.axis, itemEnabled ? baseline.position : hiddenPosition);
+				var tween = FlxTween.tween(item, properties, 0.4, {
+					ease: FlxEase.expoOut,
+					onComplete: function(completed:FlxTween) {
+						if (songUITweens.get(item) != completed) return;
+						songUITweens.remove(item);
+						if (!itemEnabled) item.visible = false;
+					}
+				});
+				songUITweens.set(item, tween);
+			}
 		}
 
 		public function addSong(songName:String, weekNum:Int, songCharacter:String, color:Int)
@@ -1367,6 +1690,13 @@ class FreeplayState extends MusicBeatState
 
 		override function destroy()
 		{
+			cancelSongUITweens();
+			if (difficultyLeftArrow != null) FlxTween.cancelTweensOf(difficultyLeftArrow);
+			if (difficultyRightArrow != null) FlxTween.cancelTweensOf(difficultyRightArrow);
+			if (grpDifficultyChoices != null)
+				for (choice in grpDifficultyChoices.members)
+					if (choice != null) FlxTween.cancelTweensOf(choice);
+			songUIDefaults.clear();
 			destroyFreeplayVocals();
 			Paths.clearStoredMemory();
 			Paths.clearUnusedMemory();

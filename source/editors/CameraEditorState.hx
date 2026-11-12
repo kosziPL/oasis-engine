@@ -1,2053 +1,1689 @@
 package editors;
 
 import flixel.FlxG;
-import flixel.FlxSprite;
 import flixel.FlxCamera;
-import flixel.group.FlxSpriteGroup;
+import flixel.FlxSprite;
 import flixel.group.FlxGroup.FlxTypedGroup;
+import flixel.group.FlxSpriteGroup;
 import flixel.math.FlxMath;
 import flixel.math.FlxPoint;
 import flixel.text.FlxText;
+import flixel.tweens.FlxEase;
+import flixel.ui.FlxButton;
 import flixel.util.FlxColor;
 import flixel.util.FlxSpriteUtil;
 import flixel.addons.ui.FlxUI;
-import flixel.addons.ui.FlxUICheckBox;
+import flixel.addons.ui.FlxUIInputText;
 import flixel.addons.ui.FlxUINumericStepper;
 import flixel.addons.ui.FlxUITabMenu;
-import flixel.ui.FlxButton;
-import PlayState.CameraEvent;
-import PlayState.CameraData;
-import Section.SwagSection;
-import Song.SwagSong;
-import Character;
-import openfl.utils.Assets as OpenFlAssets;
 import FlxUIDropDownMenuCustom;
-import openfl.display.BitmapData;
+import FlxUIDropDownMenuCustom.FlxUIDropDownHeader;
+import haxe.Json;
 
 using StringTools;
 
-// ─── Helper pin sprite ────────────────────────────────────────────────────────
-class CameraPin extends FlxSprite
+/** One marker owns several independent camera channels. Durations are PlayState.SONG seconds (v2). */
+typedef CameraKeyframe = {
+	var step:Float;
+	var settings:Array<CameraSetting>;
+}
+
+typedef CameraSetting = {
+	var kind:String;
+	var ease:String;
+	var duration:Float;
+	@:optional var target:String;
+	@:optional var targetId:Int;
+	@:optional var x:Float;
+	@:optional var y:Float;
+	@:optional var value:Float;
+	@:optional var motion:String;
+	@:optional var reset:Bool;
+	// Only retained when importing an old camera.json.
+	@:optional var standalone:Bool;
+}
+
+/**
+ * Actual transition math, also used by gameplay. No frame sampling and no second lerp.
+ * For Default, duration means time to cover 99% of the distance, just like target follow.
+ * Keeping the exponential tail makes the automatic duration exactly the normal follow.
+ */
+class CameraTransition
 {
-	public var event:CameraEvent;
-	public function new(event:CameraEvent)
+	public static inline var SETTLE:Float = 4.605170185988091;
+	public var from:Float;
+	public var to:Float;
+	public var start:Float = 0;
+	public var duration:Float = 0;
+	public var ease:String = 'instant';
+
+	public function new(value:Float)
 	{
-		super();
-		this.event = event;
+		from = to = value;
+	}
+
+	public function begin(value:Float, target:Float, time:Float, seconds:Float, functionName:String):Void
+	{
+		from = value;
+		to = target;
+		start = time;
+		duration = seconds;
+		ease = functionName;
+	}
+
+	public function at(time:Float):Float
+	{
+		return from + (to - from) * progress(ease, (time - start) / 1000, duration);
+	}
+
+	public static function progress(name:String, seconds:Float, duration:Float):Float
+	{
+		if (name == 'instant' || duration <= 0) return 1;
+		if (seconds <= 0) return 0;
+		if (name == 'default') return 1 - Math.exp(-SETTLE * seconds / duration);
+		if (seconds >= duration) return 1;
+		var t = seconds / duration;
+		// Explicit calls keep all ease functions alive on native targets (Reflect + inline doesn't).
+		return switch (name) {
+			case 'quadIn': FlxEase.quadIn(t);
+			case 'quadOut': FlxEase.quadOut(t);
+			case 'quadInOut': FlxEase.quadInOut(t);
+			case 'cubeIn': FlxEase.cubeIn(t);
+			case 'cubeOut': FlxEase.cubeOut(t);
+			case 'cubeInOut': FlxEase.cubeInOut(t);
+			case 'quartIn': FlxEase.quartIn(t);
+			case 'quartOut': FlxEase.quartOut(t);
+			case 'quartInOut': FlxEase.quartInOut(t);
+			case 'quintIn': FlxEase.quintIn(t);
+			case 'quintOut': FlxEase.quintOut(t);
+			case 'quintInOut': FlxEase.quintInOut(t);
+			case 'sineIn': FlxEase.sineIn(t);
+			case 'sineOut': FlxEase.sineOut(t);
+			case 'sineInOut': FlxEase.sineInOut(t);
+			case 'expoIn': FlxEase.expoIn(t);
+			case 'expoOut': FlxEase.expoOut(t);
+			case 'expoInOut': FlxEase.expoInOut(t);
+			case 'circIn': FlxEase.circIn(t);
+			case 'circOut': FlxEase.circOut(t);
+			case 'circInOut': FlxEase.circInOut(t);
+			case 'backIn': FlxEase.backIn(t);
+			case 'backOut': FlxEase.backOut(t);
+			case 'backInOut': FlxEase.backInOut(t);
+			case 'bounceIn': FlxEase.bounceIn(t);
+			case 'bounceOut': FlxEase.bounceOut(t);
+			case 'bounceInOut': FlxEase.bounceInOut(t);
+			case 'elasticIn': FlxEase.elasticIn(t);
+			case 'elasticOut': FlxEase.elasticOut(t);
+			case 'elasticInOut': FlxEase.elasticInOut(t);
+			default: t;
+		};
 	}
 }
 
-// ─── Main Editor ─────────────────────────────────────────────────────────────
-class CameraEditorState extends PlayState
+/** Runtime and editor use this very same director, on the real PlayState cameras. */
+@:access(PlayState)
+class CameraDirector
 {
-	// Editor UI camera (draws on top of everything)
-	var camEditor:FlxCamera;
+	public static var eases(default, null):Array<String> = ['default', 'instant', 'linear',
+		'quadIn', 'quadOut', 'quadInOut', 'cubeIn', 'cubeOut', 'cubeInOut',
+		'quartIn', 'quartOut', 'quartInOut', 'quintIn', 'quintOut', 'quintInOut',
+		'sineIn', 'sineOut', 'sineInOut', 'expoIn', 'expoOut', 'expoInOut',
+		'circIn', 'circOut', 'circInOut', 'backIn', 'backOut', 'backInOut',
+		'bounceIn', 'bounceOut', 'bounceInOut', 'elasticIn', 'elasticOut', 'elasticInOut'];
+	public var frames:Array<CameraKeyframe> = [];
+	public var baseZoom:Float;
+	var baseAngle:Float;
+	public var position:CameraSetting;
+	public var zoom:CameraSetting;
+	public var rotation:CameraSetting;
+	public var x:Float;
+	public var y:Float;
+	public var z:Float;
+	public var angle:Float;
+	var state:PlayState;
+	var tx:CameraTransition;
+	var ty:CameraTransition;
+	var tz:CameraTransition;
+	var ta:CameraTransition;
+	var cursor:Int = 0;
+	var lastTime:Float = 0;
+	var replaying:Bool = false;
+	var moments:Array<Float> = [];
+	var chartNotes:Array<Array<Dynamic>> = [];
+	var sectionSteps:Array<Float> = [];
 
-	// Viewfinder and HUD overlays
-	var topBar:FlxSprite;
-	var bottomBar:FlxSprite;
-	var guideFrame:FlxSprite;
-	var infoBG:FlxSprite;
-	var playbackBG:FlxSprite;
-	var recStatusText:FlxText;
-	var hudTimecodeText:FlxText;
-	var _recBlinkTimer:Float = 0;
-	var _splineDirty:Bool    = true;
-	var lastMouseX:Int = 0;
-	var lastMouseY:Int = 0;
-	var helpPanel:FlxSpriteGroup;
-
-	var draggingPin:CameraPin = null;
-	var _isScrubbing:Bool = false;
-
-	var infoText:FlxText;
-	var playbackText:FlxText;
-	var tipText:FlxText;
-	var isUIVisible:Bool = true;
-
-	// Manual-pan mode (IJKL / UO keys)
-	var isManualPanning:Bool = false;
-
-	// Camera state tracking variables for event-driven rendering
-	var lastCamX:Float = 0;
-	var lastCamY:Float = 0;
-	var lastCamZoom:Float = 0;
-
-	// ── Timeline ─────────────────────────────────────────────────────────────
-	var timelineBG:FlxSprite;
-	var timelineProgress:FlxSprite;   // Playhead bar
-	var timelineTrack:FlxSprite;       // Thin coloured track fill
-	var pinsGroup:FlxTypedGroup<CameraPin>;
-	static inline var TL_X:Float      = 30;
-	static inline var TL_Y:Float      = 648;
-	static inline var TL_W:Float      = 1220;
-	static inline var TL_H:Float      = 18;
-
-	// Timeline zoom variables
-	var timelineZoom:Float = 1.0;
-	var timelineStartStep:Float = 0.0;
-	var timelineEndStep:Float = 0.0;
-	var lastStartStep:Float = -1;
-	var lastEndStep:Float = -1;
-
-	// ── Spline canvas ────────────────────────────────────────────────────────
-	var splineCanvas:FlxSprite;
-
-	// ── Inspector state ──────────────────────────────────────────────────────
-	var selectedStep:Float        = -1;
-	var curEventSelected:Int      = 0;
-	var _suppressUIUpdate:Bool    = false;
-
-	var selectedEvent(get, never):CameraEvent;
-	inline function get_selectedEvent():CameraEvent
+	public function new(state:PlayState, frames:Array<CameraKeyframe>)
 	{
-		return getSelectedSubEvent();
+		this.state = state;
+		this.frames = frames;
+		baseZoom = state.defaultCamZoom;
+		x = state.camFollowPos.x;
+		y = state.camFollowPos.y;
+		z = baseZoom;
+		angle = baseAngle = state.camGame.angle;
+		tx = new CameraTransition(x);
+		ty = new CameraTransition(y);
+		tz = new CameraTransition(z);
+		ta = new CameraTransition(angle);
+		lastTime = Math.min(0, Conductor.songPosition);
+		buildMoments();
 	}
 
-	// ── Inspector widgets ────────────────────────────────────────────────────
-	var UI_mainbox:FlxUITabMenu;
-	var selectedSubEventText:FlxText;
-	var prevSubEventBtn:FlxButton;
-	var nextSubEventBtn:FlxButton;
-	var addSubEventBtn:FlxButton;
-	var removeSubEventBtn:FlxButton;
-	var targetTypeDropdown:FlxUIDropDownMenuCustom;
-	var targetIdStepper:FlxUINumericStepper;
-	var isRelativeCheckbox:FlxUICheckBox;
-	var standaloneCheckbox:FlxUICheckBox;
-	var lockNoteCheckbox:FlxUICheckBox;
-	var easeDropdown:FlxUIDropDownMenuCustom;
-	var durationStepper:FlxUINumericStepper;
-	var zoomStepper:FlxUINumericStepper;
-	var xStepper:FlxUINumericStepper;
-	var yStepper:FlxUINumericStepper;
-	var stepLabel:FlxText;
-
-	var targetIdLabel:FlxText;
-	var xLabel:FlxText;
-	var yLabel:FlxText;
-	var durationLabel:FlxText;
-	var zoomLabel:FlxText;
-	var easeLabel:FlxText;
-
-	// ─────────────────────────────────────────────────────────────────────────
-	override function create()
+	public static function secondsFor(kind:String, speed:Float = 1, decay:Float = 1):Float
 	{
-		// Bot-play so notes don't require input
-		cpuControlled = true;
-		practiceMode  = true;
+		return CameraTransition.SETTLE / Math.max(0.001, kind == 'zoom' ? 3.125 * decay : 2.4 * speed);
+	}
 
-		super.create();
-		isCameraEditor = true;
+	public static function prepareBPMMap():Void
+	{
+		// Conductor's fallback BPM is mutable; pin beat zero so backwards seeks stay correct.
+		if (Conductor.bpmChangeMap.length == 0 || Conductor.bpmChangeMap[0].stepTime > 0)
+			Conductor.bpmChangeMap.unshift({stepTime: 0, songTime: 0, bpm: PlayState.SONG.bpm, stepCrochet: 15000 / PlayState.SONG.bpm});
+	}
 
-		// ── Hide gameplay HUD ──────────────────────────────────────────────
-		if (camHUD != null)
+	public static function stepTime(step:Float):Float
+	{
+		return Conductor.beatToSeconds(step / 4);
+	}
+
+	static function number(v:Dynamic, fallback:Float):Float
+	{
+		var n = Std.parseFloat(Std.string(v));
+		return Math.isFinite(n) ? n : fallback;
+	}
+
+	/** Validate at the disk boundary. Old entries at the same step become a single marker. */
+	public static function decode(data:Dynamic):Array<CameraKeyframe>
+	{
+		var result:Array<CameraKeyframe> = [];
+		if (data == null) throw 'Empty camera file';
+		if (data.version != null && number(data.version, 0) > 2) throw 'Unsupported camera file version';
+		var modern:Bool = data.camera_timeline != null;
+		var source:Dynamic = modern ? data.camera_timeline : data.camera_events;
+		if (!Std.isOfType(source, Array)) throw 'Missing camera_timeline / camera_events array';
+		for (entry in (source:Array<Dynamic>))
 		{
-			camHUD.visible = false;
-			camHUD.alpha   = 0;
-		}
-		cpuControlled = true;  // re-enforce after super.create()
-		camZooming = false;    // prevent beat hits from bouncing the camera and messing up visualizer
-
-		// ── Create dedicated editor UI camera ─────────────────────────────
-		camEditor = new FlxCamera();
-		camEditor.bgColor.alpha = 0;
-		FlxG.cameras.add(camEditor, false);
-
-
-		// ── Spline canvas (full-screen bitmap, drawn with FlxSpriteUtil) ──
-		splineCanvas = new FlxSprite(0, 0);
-		splineCanvas.makeGraphic(FlxG.width, FlxG.height, FlxColor.TRANSPARENT);
-		splineCanvas.scrollFactor.set(0, 0);
-		splineCanvas.cameras = [camEditor];
-		add(splineCanvas);
-
-		// ── Cinematic bars backgrounds ────────────────────────────────────
-		topBar = new FlxSprite(0, 0);
-		topBar.makeGraphic(FlxG.width, 55, 0x00000000);
-		FlxSpriteUtil.drawRect(topBar, 0, 0, FlxG.width, 55, 0xCC08080A);
-		FlxSpriteUtil.drawLine(topBar, 0, 54, FlxG.width, 54, {color: 0x4400FFFF, thickness: 1});
-		topBar.scrollFactor.set(0, 0);
-		topBar.cameras = [camEditor];
-		add(topBar);
-
-		bottomBar = new FlxSprite(0, 585);
-		bottomBar.makeGraphic(FlxG.width, 135, 0x00000000);
-		FlxSpriteUtil.drawRect(bottomBar, 0, 0, FlxG.width, 135, 0xCC08080A);
-		FlxSpriteUtil.drawLine(bottomBar, 0, 0, FlxG.width, 0, {color: 0x4400FFFF, thickness: 1});
-		bottomBar.scrollFactor.set(0, 0);
-		bottomBar.cameras = [camEditor];
-		add(bottomBar);
-
-		// ── Viewfinder Guides ─────────────────────────────────────────────
-		guideFrame = new FlxSprite(0, 0);
-		guideFrame.makeGraphic(FlxG.width, FlxG.height, FlxColor.TRANSPARENT);
-		var safeX:Float = 40;
-		var safeY:Float = 55 + 30;
-		var safeW:Float = FlxG.width - 80;
-		var safeH:Float = (585 - 55) - 60;
-		FlxSpriteUtil.drawRect(guideFrame, safeX, safeY, safeW, safeH, FlxColor.TRANSPARENT, {color: 0x22FFFFFF, thickness: 1});
-		
-		var cx:Float = FlxG.width * 0.5;
-		var cy:Float = 55 + (585 - 55) * 0.5;
-		FlxSpriteUtil.drawLine(guideFrame, cx - 15, cy, cx + 15, cy, {color: 0x33FFFFFF, thickness: 1});
-		FlxSpriteUtil.drawLine(guideFrame, cx, cy - 15, cx, cy + 15, {color: 0x33FFFFFF, thickness: 1});
-		guideFrame.scrollFactor.set(0, 0);
-		guideFrame.cameras = [camEditor];
-		add(guideFrame);
-
-		// ── Timeline ──────────────────────────────────────────────────────
-		// Background strip
-		timelineBG = new FlxSprite(TL_X, TL_Y)
-			.makeGraphic(Std.int(TL_W), Std.int(TL_H) + 4, 0xFF1A1A1A);
-		timelineBG.scrollFactor.set(0, 0);
-		timelineBG.cameras = [camEditor];
-		add(timelineBG);
-
-		// Accent line (track colour)
-		timelineTrack = new FlxSprite(TL_X, TL_Y + Std.int(TL_H) - 2)
-			.makeGraphic(Std.int(TL_W), 3, 0xFF5544AA);
-		timelineTrack.scrollFactor.set(0, 0);
-		timelineTrack.cameras = [camEditor];
-		add(timelineTrack);
-
-		// Playhead (red vertical bar — positioned by x only)
-		timelineProgress = new FlxSprite(TL_X, TL_Y - 4)
-			.makeGraphic(3, Std.int(TL_H) + 8, FlxColor.RED);
-		timelineProgress.scrollFactor.set(0, 0);
-		timelineProgress.cameras = [camEditor];
-		add(timelineProgress);
-
-		// ── Pin group ─────────────────────────────────────────────────────
-		pinsGroup = new FlxTypedGroup<CameraPin>();
-		add(pinsGroup);
-
-		// ── Floating panels backgrounds ───────────────────────────────────
-		infoBG = new FlxSprite(10, 70);
-		infoBG.makeGraphic(240, 185, 0x00000000);
-		FlxSpriteUtil.drawRect(infoBG, 0, 0, 240, 185, 0x9908080A);
-		FlxSpriteUtil.drawRect(infoBG, 0, 0, 240, 185, FlxColor.TRANSPARENT, {color: 0x22FFFFFF, thickness: 1});
-		infoBG.scrollFactor.set(0, 0);
-		infoBG.cameras = [camEditor];
-		add(infoBG);
-
-		playbackBG = new FlxSprite(10, 270);
-		playbackBG.makeGraphic(240, 115, 0x00000000);
-		FlxSpriteUtil.drawRect(playbackBG, 0, 0, 240, 115, 0x9908080A);
-		FlxSpriteUtil.drawRect(playbackBG, 0, 0, 240, 115, FlxColor.TRANSPARENT, {color: 0x22FFFFFF, thickness: 1});
-		playbackBG.scrollFactor.set(0, 0);
-		playbackBG.cameras = [camEditor];
-		add(playbackBG);
-
-		// ── Info panel (top-left, inside BG) ──────────────────────────────
-		infoText = new FlxText(20, 80, 220, "", 13);
-		infoText.setFormat(Paths.font("vcr.ttf"), 13, FlxColor.WHITE, LEFT,
-			FlxTextBorderStyle.OUTLINE, 0xFF000000);
-		infoText.scrollFactor.set(0, 0);
-		infoText.cameras = [camEditor];
-		add(infoText);
-
-		// ── Playback / time panel (below info, inside BG) ─────────────────
-		playbackText = new FlxText(20, 280, 220, "", 13);
-		playbackText.setFormat(Paths.font("vcr.ttf"), 13, FlxColor.WHITE, LEFT,
-			FlxTextBorderStyle.OUTLINE, 0xFF000000);
-		playbackText.scrollFactor.set(0, 0);
-		playbackText.cameras = [camEditor];
-		add(playbackText);
-
-		// ── Media Controls (above timeline) ───────────────────────────────
-		var mcX = TL_X;
-		var mcY = TL_Y - 30;
-		
-		var playPauseBtn = new FlxButton(mcX, mcY, "Play / Pause", function() {
-			if (!paused) {
-				paused = true;
-				FlxG.sound.music.pause();
-				if (vocals != null) vocals.pause();
-			} else {
-				isManualPanning = false;
-				paused = false;
-				if (FlxG.sound.music != null) { FlxG.sound.music.time = Conductor.songPosition; FlxG.sound.music.play(); }
-				if (vocals != null) { vocals.time = Conductor.songPosition; vocals.play(); }
-				previousFrameTime = FlxG.game.ticks;
-			}
-		});
-		playPauseBtn.color = 0xFF8ECAFF; // Blue
-		playPauseBtn.cameras = [camEditor];
-		add(playPauseBtn);
-
-		var prevBtn = new FlxButton(mcX + 90, mcY, "Prev Event", function() {
-			var curStep = Conductor.songPosition / Conductor.stepCrochet;
-			var targetStep = 0.0;
-			for (i in 0...cameraEvents.length) {
-				var ev = cameraEvents[cameraEvents.length - 1 - i];
-				if (ev.step < curStep - 0.05) { targetStep = ev.step; break; }
-			}
-			seekTo(targetStep * Conductor.stepCrochet);
-		});
-		prevBtn.color = 0xFFCCCCCC;      // Grey
-		prevBtn.cameras = [camEditor];
-		add(prevBtn);
-
-		var nextBtn = new FlxButton(mcX + 180, mcY, "Next Event", function() {
-			var curStep = Conductor.songPosition / Conductor.stepCrochet;
-			for (ev in cameraEvents) {
-				if (ev.step > curStep + 0.05) {
-					seekTo(ev.step * Conductor.stepCrochet);
-					break;
-				}
-			}
-		});
-		nextBtn.color = 0xFFCCCCCC;      // Grey
-		nextBtn.cameras = [camEditor];
-		add(nextBtn);
-
-		var addPinBtn = new FlxButton(mcX + 270, mcY, "Add Event", onAddEvent);
-		addPinBtn.color = 0xFF8AD490;    // Green
-		addPinBtn.cameras = [camEditor];
-		add(addPinBtn);
-		
-		var helpBtn = new FlxButton(TL_X + TL_W - 80, mcY, "Help [H]", function() {
-			helpPanel.visible = !helpPanel.visible;
-		});
-		helpBtn.color = 0xFFFFC374;      // Orange/Yellow
-		helpBtn.cameras = [camEditor];
-		add(helpBtn);
-
-		// Help Panel gets added at the very end of create() to render over everything else.
-
-		// ── Viewfinder HUD overlays ───────────────────────────────────────
-		recStatusText = new FlxText(FlxG.width - 250, 16, 230, "STBY", 16);
-		recStatusText.setFormat(Paths.font("vcr.ttf"), 16, 0xFFFFB300, RIGHT, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
-		recStatusText.scrollFactor.set(0, 0);
-		recStatusText.cameras = [camEditor];
-		add(recStatusText);
-
-		hudTimecodeText = new FlxText(0, 15, FlxG.width, "00:00:00:00", 20);
-		hudTimecodeText.setFormat(Paths.font("vcr.ttf"), 20, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
-		hudTimecodeText.scrollFactor.set(0, 0);
-		hudTimecodeText.cameras = [camEditor];
-		add(hudTimecodeText);
-
-		// ── Inspector panel (right side) ──────────────────────────────────
-		buildInspector();
-
-		// ── Initial state ─────────────────────────────────────────────────
-		recreatePins();
-		if (FlxG.sound.music != null && FlxG.sound.music.length > 0)
-			drawTimelineTicks();
-
-		FlxG.mouse.visible = true;
-
-		if (cameraEvents.length > 0)
-		{
-			selectedStep = cameraEvents[0].step;
-			curEventSelected = 0;
-		}
-		refreshInspector();
-
-		// Start paused
-		paused = true;
-		if (FlxG.sound.music != null)
-			FlxG.sound.music.pause();
-		if (vocals != null)
-			vocals.pause();
-
-		// Auto-convert Psych Engine "Set Camera Pos" events to camera.json events if we have none
-		if (cameraEvents.length == 0 && eventNotes != null)
-		{
-			for (e in eventNotes)
+			if (entry == null) continue;
+			var step = Math.max(0, number(entry.step, 0));
+			var settings:Array<CameraSetting> = [];
+			if (modern)
 			{
-				if (e.event == 'Set Camera Pos')
+				if (!Std.isOfType(entry.settings, Array)) throw 'Invalid camera settings at step ' + step;
+				for (raw in (entry.settings:Array<Dynamic>))
 				{
-					var stepF = e.strumTime / Conductor.stepCrochet;
-					stepF = Math.fround(stepF * 4.0) / 4.0;
-					var valX:Float = Std.parseFloat(e.value1);
-					var valY:Float = Std.parseFloat(e.value2);
-					var isReset:Bool = Math.isNaN(valX) || Math.isNaN(valY);
-
-					if (!isReset)
-					{
-						addOrUpdateEvent(stepF, "global", 0, false, valX, valY, defaultCamZoom, "linear", 0.0, false, false);
-					}
+					if (raw == null || ['position', 'zoom', 'rotation'].indexOf(raw.kind) < 0)
+						throw 'Unknown camera setting at step ' + step;
+					var s:CameraSetting = {
+						kind: raw.kind, ease: eases.indexOf(raw.ease) >= 0 ? raw.ease : 'default',
+						duration: Math.max(0, number(raw.duration, secondsFor(raw.kind))),
+						target: raw.target == null ? 'global' : raw.target, targetId: Std.int(number(raw.targetId, 0)),
+						x: number(raw.x, 0), y: number(raw.y, 0), value: number(raw.value, raw.kind == 'zoom' ? 1 : 0),
+						motion: raw.motion == 'fixed' ? 'fixed' : 'notes', reset: raw.reset == true,
+						standalone: raw.standalone == true
+					};
+					if (s.kind == 'position' && ['global', 'dad', 'bf', 'gf', 'midpoint', 'extra_char', 'default'].indexOf(s.target) < 0)
+						throw 'Unknown camera target at step ' + step;
+					if (s.kind == 'zoom') s.value = Math.max(0.05, s.value);
+					settings.push(s);
 				}
-			}
-		}
-
-		// ── Help Panel (hidden by default, added last to draw on top of everything) ───────────────────
-		helpPanel = new FlxSpriteGroup();
-		var helpBG = new FlxSprite().makeGraphic(FlxG.width, FlxG.height, 0xDD000000);
-		helpPanel.add(helpBG);
-		var helpTxt = new FlxText(0, 0, FlxG.width, 
-			"=== CAMERA EDITOR HELP ===\n\n" +
-			"[SPACE] - Play / Pause playback\n" +
-			"[LEFT/RIGHT] - Seek song position by 10 seconds\n" +
-			"[SHIFT] + [LEFT/RIGHT] - Seek song position by 4 beats\n" +
-			"[R] - Seek to song start (0s)\n" +
-			"[END] - Seek to song end\n" +
-			"[H] - Toggle this Help Screen\n" +
-			"[TAB] - Toggle entire HUD/UI visibility\n\n" +
-			"[I / J / K / L] - Pan camera (Up / Left / Down / Right) (Hold [SHIFT] for 3x speed)\n" +
-			"[U / O] - Zoom camera out / in (Hold [SHIFT] for 3x speed)\n" +
-			"[Middle Mouse / Right Click Drag] - Drag to pan camera viewport manually\n\n" +
-			"[C] - Capture current camera viewport values to inspector fields\n" +
-			"[CTRL] + [S] - Save all camera events database to camera.json config file\n" +
-			"[CTRL + Click] or [M + Click] - Teleport camera target coordinate to mouse click\n" +
-			"[Scroll Wheel over Timeline] - Zoom timeline view bounds in / out (1x - 50x)\n\n" +
-			"Note: Timeline scrolling freezes automatically while dragging pins or scrubbing.\n" +
-			"Click anywhere or press H / ESCAPE to close this panel.", 16);
-		helpTxt.setFormat(Paths.font("vcr.ttf"), 16, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
-		helpTxt.screenCenter();
-		helpPanel.add(helpTxt);
-		helpPanel.scrollFactor.set(0, 0);
-		helpPanel.cameras = [camEditor];
-		helpPanel.visible = false;
-		add(helpPanel);
-	}
-
-	// ─── Bypass pause menu & song end ────────────────────────────────────────
-	override function openPauseMenu() { /* blocked */ }
-
-	override public function finishSong(?ignoreNoteOffset:Bool = false):Void
-	{
-		seekTo(0);
-	}
-
-	// ─── Suppress base-class camera systems when paused ──────────────────────
-	override function moveCameraSection():Void
-	{
-		if (paused) return;
-		super.moveCameraSection();
-	}
-
-	override public function moveCamera(isDad:Bool):Void
-	{
-		if (paused) return;
-		super.moveCamera(isDad);
-	}
-
-	override public function updateCameraEvents(elapsed:Float):Void
-	{
-		if (paused && isManualPanning) return;
-
-		var selectedSubEvent:CameraEvent = getSelectedSubEvent();
-		if (paused && selectedSubEvent != null)
-		{
-			// Backup original values
-			var oldTargetType = selectedSubEvent.target_type;
-			var oldTargetId = selectedSubEvent.target_id;
-			var oldIsRelative = selectedSubEvent.is_relative;
-			var oldX = selectedSubEvent.x;
-			var oldY = selectedSubEvent.y;
-			var oldZoom = selectedSubEvent.zoom;
-			var oldEase = selectedSubEvent.ease;
-			var oldDuration = selectedSubEvent.duration;
-			var oldStandalone = selectedSubEvent.standalone;
-			var oldLockNote = selectedSubEvent.lock_note_movement;
-
-			// Temporarily write the UI values into the event object for previewing
-			selectedSubEvent.target_type = (targetTypeDropdown != null) ? targetTypeDropdown.selectedId : oldTargetType;
-			selectedSubEvent.target_id = (targetIdStepper != null) ? Std.int(targetIdStepper.value) : oldTargetId;
-			selectedSubEvent.is_relative = (isRelativeCheckbox != null) ? isRelativeCheckbox.checked : oldIsRelative;
-			selectedSubEvent.x = (xStepper != null) ? xStepper.value : oldX;
-			selectedSubEvent.y = (yStepper != null) ? yStepper.value : oldY;
-			selectedSubEvent.zoom = (zoomStepper != null) ? zoomStepper.value : oldZoom;
-			selectedSubEvent.ease = (easeDropdown != null) ? easeDropdown.selectedId : oldEase;
-			selectedSubEvent.duration = (durationStepper != null) ? durationStepper.value : oldDuration;
-			selectedSubEvent.standalone = (standaloneCheckbox != null) ? standaloneCheckbox.checked : oldStandalone;
-			selectedSubEvent.lock_note_movement = (lockNoteCheckbox != null) ? lockNoteCheckbox.checked : oldLockNote;
-
-			super.updateCameraEvents(elapsed);
-
-			// Restore original values
-			selectedSubEvent.target_type = oldTargetType;
-			selectedSubEvent.target_id = oldTargetId;
-			selectedSubEvent.is_relative = oldIsRelative;
-			selectedSubEvent.x = oldX;
-			selectedSubEvent.y = oldY;
-			selectedSubEvent.zoom = oldZoom;
-			selectedSubEvent.ease = oldEase;
-			selectedSubEvent.duration = oldDuration;
-			selectedSubEvent.standalone = oldStandalone;
-			selectedSubEvent.lock_note_movement = oldLockNote;
-		}
-		else
-		{
-			super.updateCameraEvents(elapsed);
-		}
-	}
-
-	// ─── Helper method to block hasActiveCameraEvent during manual pan zoom code
-	override function hasActiveCameraEvent():Bool
-	{
-		if (paused) return false;
-		return super.hasActiveCameraEvent();
-	}
-
-	// ─────────────────────────────────────────────────────────────────────────
-	//  INSPECTOR BUILD
-	// ─────────────────────────────────────────────────────────────────────────
-	function buildInspector():Void
-	{
-		var tabs = [{name: "Event", label: "Camera Event"}];
-		UI_mainbox = new FlxUITabMenu(null, tabs, true);
-		UI_mainbox.resize(330, 420);
-		UI_mainbox.x = FlxG.width - UI_mainbox.width - 10;
-		UI_mainbox.y = 65;
-		UI_mainbox.scrollFactor.set(0, 0);
-		UI_mainbox.cameras = [camEditor];
-
-		var tab = new FlxUI(null, UI_mainbox);
-		tab.name = "Event";
-
-		// Step info label (cyan)
-		stepLabel = new FlxText(10, 6, 310, "Step: - (no event)", 12);
-		stepLabel.setFormat(Paths.font("vcr.ttf"), 12, FlxColor.CYAN);
-		tab.add(stepLabel);
-
-		// Sub-event navigation widgets
-		selectedSubEventText = new FlxText(10, 25, 130, "Sub-Event: None", 10);
-		selectedSubEventText.cameras = [camEditor];
-		tab.add(selectedSubEventText);
-
-		prevSubEventBtn = new FlxButton(145, 22, "<", function() { changeSubEventSelected(-1); });
-		prevSubEventBtn.color = 0xFFD4E6F1; // Lighter blue/grey
-		prevSubEventBtn.setGraphicSize(35, 20);
-		prevSubEventBtn.updateHitbox();
-		prevSubEventBtn.label.size = 12;
-		prevSubEventBtn.label.fieldWidth = 35;
-		prevSubEventBtn.label.alignment = CENTER;
-		for (point in prevSubEventBtn.labelOffsets) point.set(0, 3);
-		prevSubEventBtn.cameras = [camEditor];
-		tab.add(prevSubEventBtn);
-
-		nextSubEventBtn = new FlxButton(190, 22, ">", function() { changeSubEventSelected(1); });
-		nextSubEventBtn.color = 0xFFD4E6F1; // Lighter blue/grey
-		nextSubEventBtn.setGraphicSize(35, 20);
-		nextSubEventBtn.updateHitbox();
-		nextSubEventBtn.label.size = 12;
-		nextSubEventBtn.label.fieldWidth = 35;
-		nextSubEventBtn.label.alignment = CENTER;
-		for (point in nextSubEventBtn.labelOffsets) point.set(0, 3);
-		nextSubEventBtn.cameras = [camEditor];
-		tab.add(nextSubEventBtn);
-
-		addSubEventBtn = new FlxButton(235, 22, "+", onAddSubEvent);
-		addSubEventBtn.color = 0xFF8AD490;  // Green
-		addSubEventBtn.setGraphicSize(35, 20);
-		addSubEventBtn.updateHitbox();
-		addSubEventBtn.label.size = 12;
-		addSubEventBtn.label.fieldWidth = 35;
-		addSubEventBtn.label.alignment = CENTER;
-		for (point in addSubEventBtn.labelOffsets) point.set(0, 3);
-		addSubEventBtn.cameras = [camEditor];
-		tab.add(addSubEventBtn);
-
-		removeSubEventBtn = new FlxButton(280, 22, "-", onRemoveSubEvent);
-		removeSubEventBtn.color = 0xFFFF8F8F; // Red
-		removeSubEventBtn.setGraphicSize(35, 20);
-		removeSubEventBtn.updateHitbox();
-		removeSubEventBtn.label.size = 12;
-		removeSubEventBtn.label.fieldWidth = 35;
-		removeSubEventBtn.label.alignment = CENTER;
-		for (point in removeSubEventBtn.labelOffsets) point.set(0, 3);
-		removeSubEventBtn.cameras = [camEditor];
-		tab.add(removeSubEventBtn);
-
-		// Target ID stepper (right side, added BEFORE its dropdown so dropdown draws on top)
-		targetIdStepper = new FlxUINumericStepper(215, 70, 1, 0, 0, 99, 0);
-		targetIdStepper.cameras = [camEditor];
-		tab.add(targetIdStepper);
-		targetIdLabel = new FlxText(215, 55, 0, "Target ID (extra):", 10);
-		targetIdLabel.cameras = [camEditor];
-		tab.add(targetIdLabel);
-
-		// Checkboxes
-		isRelativeCheckbox = new FlxUICheckBox(10, 105, null, null, "Relative to character?", 150);
-		isRelativeCheckbox.callback = function()
-		{
-			if (!_suppressUIUpdate)
-			{
-				isManualPanning = false;
-				_splineDirty = true;
-			}
-		};
-		isRelativeCheckbox.cameras = [camEditor];
-		tab.add(isRelativeCheckbox);
-
-		standaloneCheckbox = new FlxUICheckBox(170, 105, null, null, "Standalone mode", 140);
-		standaloneCheckbox.callback = function()
-		{
-			if (!_suppressUIUpdate)
-			{
-				isManualPanning = false;
-				_splineDirty = true;
-			}
-		};
-		standaloneCheckbox.cameras = [camEditor];
-		tab.add(standaloneCheckbox);
-
-		lockNoteCheckbox = new FlxUICheckBox(10, 130, null, null, "Lock note movement", 200);
-		lockNoteCheckbox.callback = function()
-		{
-			if (!_suppressUIUpdate)
-			{
-				isManualPanning = false;
-				_splineDirty = true;
-			}
-		};
-		lockNoteCheckbox.cameras = [camEditor];
-		tab.add(lockNoteCheckbox);
-
-		// X / Y steppers (label directly above)
-		xStepper = new FlxUINumericStepper(10,  170, 10, 0, -9999, 9999, 1);
-		yStepper = new FlxUINumericStepper(170, 170, 10, 0, -9999, 9999, 1);
-		xStepper.cameras = [camEditor];
-		yStepper.cameras = [camEditor];
-		tab.add(xStepper);
-		tab.add(yStepper);
-		xLabel = new FlxText(10,  155, 0, "X (pos / offset):", 10);
-		yLabel = new FlxText(170, 155, 0, "Y (pos / offset):", 10);
-		xLabel.cameras = [camEditor];
-		yLabel.cameras = [camEditor];
-		tab.add(xLabel);
-		tab.add(yLabel);
-
-		// Duration / Zoom steppers
-		durationStepper = new FlxUINumericStepper(10,  215, 0.25, 0,   0,   64, 2);
-		zoomStepper     = new FlxUINumericStepper(170, 215, 0.05, 1.0, 0.1,  4, 2);
-		durationStepper.cameras = [camEditor];
-		zoomStepper.cameras     = [camEditor];
-		tab.add(durationStepper);
-		tab.add(zoomStepper);
-		durationLabel = new FlxText(10,  200, 0, "Duration (beats):", 10);
-		zoomLabel = new FlxText(170, 200, 0, "Camera Zoom:", 10);
-		durationLabel.cameras = [camEditor];
-		zoomLabel.cameras = [camEditor];
-		tab.add(durationLabel);
-		tab.add(zoomLabel);
-
-		// Ease label (text added before dropdown widget in Z-order is fine for text)
-		easeLabel = new FlxText(10, 245, 0, "Ease:", 10);
-		easeLabel.cameras = [camEditor];
-		tab.add(easeLabel);
-
-		// Action buttons
-		var addBtn  = new FlxButton(10,  310, "Add Here",     onAddEvent);
-		var editBtn = new FlxButton(115, 310, "Edit Selected", onEditSelected);
-		var delBtn  = new FlxButton(220, 310, "Delete Event", onDeleteEvent);
-		var saveBtn = new FlxButton(10,  345, "SAVE (Ctrl+S)",saveCameraConfig);
-		var exitBtn = new FlxButton(170, 345, "Exit Editor",  exitEditor);
-		addBtn.cameras  = [camEditor];
-		editBtn.cameras = [camEditor];
-		delBtn.cameras  = [camEditor];
-		saveBtn.cameras = [camEditor];
-		exitBtn.cameras = [camEditor];
-		
-		addBtn.color = 0xFF8AD490;    // Green
-		editBtn.color = 0xFFFFC374;   // Orange/Yellow
-		delBtn.color = 0xFFFF8F8F;    // Red
-		saveBtn.color = 0xFF8ECAFF;   // Blue
-		exitBtn.color = 0xFFCCCCCC;   // Light grey
-
-		addBtn.setGraphicSize(100, 20);
-		addBtn.updateHitbox();
-		addBtn.label.fieldWidth = 100;
-		addBtn.label.alignment = CENTER;
-		for (point in addBtn.labelOffsets) point.set(0, 3);
-
-		editBtn.setGraphicSize(100, 20);
-		editBtn.updateHitbox();
-		editBtn.label.fieldWidth = 100;
-		editBtn.label.alignment = CENTER;
-		for (point in editBtn.labelOffsets) point.set(0, 3);
-
-		delBtn.setGraphicSize(100, 20);
-		delBtn.updateHitbox();
-		delBtn.label.fieldWidth = 100;
-		delBtn.label.alignment = CENTER;
-		for (point in delBtn.labelOffsets) point.set(0, 3);
-
-		saveBtn.setGraphicSize(150, 20);
-		saveBtn.updateHitbox();
-		saveBtn.label.fieldWidth = 150;
-		saveBtn.label.alignment = CENTER;
-		for (point in saveBtn.labelOffsets) point.set(0, 3);
-
-		exitBtn.setGraphicSize(150, 20);
-		exitBtn.updateHitbox();
-		exitBtn.label.fieldWidth = 150;
-		exitBtn.label.alignment = CENTER;
-		for (point in exitBtn.labelOffsets) point.set(0, 3);
-
-		tab.add(addBtn);
-		tab.add(editBtn);
-		tab.add(delBtn);
-		tab.add(saveBtn);
-		tab.add(exitBtn);
-
-		// ── DROPDOWNS LAST so they draw on top of all other widgets ──────
-		tab.add(new FlxText(10, 55, 0, "Event Type:", 10));
-		var targetLabels = [
-			new flixel.addons.ui.StrNameLabel("dad", "Focus Dad"),
-			new flixel.addons.ui.StrNameLabel("bf", "Focus BF"),
-			new flixel.addons.ui.StrNameLabel("gf", "Focus GF"),
-			new flixel.addons.ui.StrNameLabel("extra_char", "Focus Extra Char"),
-			new flixel.addons.ui.StrNameLabel("global", "Focus World Pos"),
-			new flixel.addons.ui.StrNameLabel("zoom", "Zoom Only"),
-			new flixel.addons.ui.StrNameLabel("midpoint", "Midpoint (Dad & BF)"),
-			new flixel.addons.ui.StrNameLabel("default", "Revert to Default")
-		];
-		targetTypeDropdown = new FlxUIDropDownMenuCustom(10, 70,
-			targetLabels,
-			function(target:String)
-			{
-				if (!_suppressUIUpdate)
-				{
-					isManualPanning = false;
-					_splineDirty = true;
-					updateWidgetVisibility();
-				}
-			});
-		targetTypeDropdown.cameras = [camEditor];
-
-		var easeList = [
-			new flixel.addons.ui.StrNameLabel("instant", "Instant Snap"),
-			new flixel.addons.ui.StrNameLabel("linear", "Linear"),
-			new flixel.addons.ui.StrNameLabel("sineIn", "Sine In"),
-			new flixel.addons.ui.StrNameLabel("sineOut", "Sine Out"),
-			new flixel.addons.ui.StrNameLabel("sineInOut", "Sine In-Out"),
-			new flixel.addons.ui.StrNameLabel("quadIn", "Quad In"),
-			new flixel.addons.ui.StrNameLabel("quadOut", "Quad Out"),
-			new flixel.addons.ui.StrNameLabel("quadInOut", "Quad In-Out"),
-			new flixel.addons.ui.StrNameLabel("cubeIn", "Cube In"),
-			new flixel.addons.ui.StrNameLabel("cubeOut", "Cube Out"),
-			new flixel.addons.ui.StrNameLabel("cubeInOut", "Cube In-Out"),
-			new flixel.addons.ui.StrNameLabel("quartIn", "Quart In"),
-			new flixel.addons.ui.StrNameLabel("quartOut", "Quart Out"),
-			new flixel.addons.ui.StrNameLabel("quartInOut", "Quart In-Out"),
-			new flixel.addons.ui.StrNameLabel("quintIn", "Quint In"),
-			new flixel.addons.ui.StrNameLabel("quintOut", "Quint Out"),
-			new flixel.addons.ui.StrNameLabel("quintInOut", "Quint In-Out"),
-			new flixel.addons.ui.StrNameLabel("expoIn", "Expo In"),
-			new flixel.addons.ui.StrNameLabel("expoOut", "Expo Out"),
-			new flixel.addons.ui.StrNameLabel("expoInOut", "Expo In-Out"),
-			new flixel.addons.ui.StrNameLabel("backIn", "Back In"),
-			new flixel.addons.ui.StrNameLabel("backOut", "Back Out"),
-			new flixel.addons.ui.StrNameLabel("backInOut", "Back In-Out"),
-			new flixel.addons.ui.StrNameLabel("bounceIn", "Bounce In"),
-			new flixel.addons.ui.StrNameLabel("bounceOut", "Bounce Out"),
-			new flixel.addons.ui.StrNameLabel("bounceInOut", "Bounce In-Out"),
-			new flixel.addons.ui.StrNameLabel("circIn", "Circ In"),
-			new flixel.addons.ui.StrNameLabel("circOut", "Circ Out"),
-			new flixel.addons.ui.StrNameLabel("circInOut", "Circ In-Out"),
-			new flixel.addons.ui.StrNameLabel("elasticIn", "Elastic In"),
-			new flixel.addons.ui.StrNameLabel("elasticOut", "Elastic Out"),
-			new flixel.addons.ui.StrNameLabel("elasticInOut", "Elastic In-Out")
-		];
-		easeDropdown = new FlxUIDropDownMenuCustom(10, 260,
-			easeList,
-			function(ease:String)
-			{
-				if (!_suppressUIUpdate)
-				{
-					isManualPanning = false;
-					_splineDirty = true;
-				}
-			});
-		easeDropdown.cameras = [camEditor];
-
-		// Add dropdowns very last
-		tab.add(targetTypeDropdown);
-		tab.add(easeDropdown);
-
-		UI_mainbox.addGroup(tab);
-		add(UI_mainbox);
-	}
-
-	public function getSelectedSubEvent():CameraEvent
-	{
-		if (selectedStep < 0) return null;
-		var stepEvents = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-		if (stepEvents.length > 0 && curEventSelected >= 0 && curEventSelected < stepEvents.length)
-			return stepEvents[curEventSelected];
-		return null;
-	}
-
-	function changeSubEventSelected(change:Int):Void
-	{
-		if (selectedStep < 0) return;
-		var stepEvents = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-		if (stepEvents.length == 0) return;
-
-		curEventSelected += change;
-		if (curEventSelected < 0)
-			curEventSelected = stepEvents.length - 1;
-		else if (curEventSelected >= stepEvents.length)
-			curEventSelected = 0;
-
-		refreshInspector(true); // skip recreating pins since position is unchanged
-	}
-
-	function onAddSubEvent():Void
-	{
-		if (selectedStep < 0) return;
-
-		var newEv:CameraEvent = {
-			step: selectedStep,
-			target_type: "zoom",
-			target_id: 0,
-			is_relative: false,
-			x: 0.0,
-			y: 0.0,
-			zoom: -1.0,
-			ease: "linear",
-			duration: 0.0,
-			standalone: false,
-			lock_note_movement: false
-		};
-		cameraEvents.push(newEv);
-		cameraEvents.sort(function(a, b) return Reflect.compare(a.step, b.step));
-
-		var stepEvents = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-		curEventSelected = stepEvents.indexOf(newEv);
-
-		recreatePins();
-		refreshInspector();
-		FlxG.sound.play(Paths.sound('scrollMenu'));
-	}
-
-	function onRemoveSubEvent():Void
-	{
-		if (selectedStep < 0) return;
-		var stepEvents = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-		if (stepEvents.length == 0) return;
-
-		var toRemove = stepEvents[curEventSelected];
-		cameraEvents.remove(toRemove);
-
-		var remaining = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-		if (remaining.length > 0)
-		{
-			curEventSelected = FlxMath.maxInt(0, curEventSelected - 1);
-		}
-		else
-		{
-			selectedStep = -1;
-			curEventSelected = 0;
-		}
-
-		recreatePins();
-		refreshInspector();
-		FlxG.sound.play(Paths.sound('scrollMenu'));
-	}
-
-	function onEditSelected():Void
-	{
-		if (selectedStep < 0) return;
-		var stepEvents = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-		if (stepEvents.length > 0 && curEventSelected >= 0 && curEventSelected < stepEvents.length)
-		{
-			var ev = stepEvents[curEventSelected];
-			ev.target_type = targetTypeDropdown.selectedId;
-			ev.target_id = Std.int(targetIdStepper.value);
-			ev.is_relative = isRelativeCheckbox.checked;
-			ev.x = xStepper.value;
-			ev.y = yStepper.value;
-			ev.zoom = zoomStepper.value;
-			ev.ease = easeDropdown.selectedId;
-			ev.duration = durationStepper.value;
-			ev.standalone = standaloneCheckbox.checked;
-			ev.lock_note_movement = lockNoteCheckbox.checked;
-
-			// Sort in case step changed (though editing shouldn't change step, but safe to sort)
-			cameraEvents.sort(function(a, b) return Reflect.compare(a.step, b.step));
-
-			recreatePins();
-			refreshInspector();
-			FlxG.sound.play(Paths.sound('confirmMenu'));
-		}
-	}
-
-	// ─── Button handlers ─────────────────────────────────────────────────────
-	function onAddEvent():Void
-	{
-		var stepFloat:Float = Conductor.songPosition / Conductor.stepCrochet;
-		if (!FlxG.keys.pressed.SHIFT)
-			stepFloat = Math.fround(stepFloat * 4.0) / 4.0;
-
-		var tt   = (targetTypeDropdown != null) ? targetTypeDropdown.selectedId : "global";
-		var tid  = (targetIdStepper != null) ? Std.int(targetIdStepper.value) : 0;
-		var rel  = (isRelativeCheckbox != null) ? isRelativeCheckbox.checked : false;
-		var ease = (easeDropdown != null) ? easeDropdown.selectedId : "linear";
-		var dur  = (durationStepper != null) ? durationStepper.value : 0.0;
-		var sa   = (standaloneCheckbox != null) ? standaloneCheckbox.checked : false;
-		var ln   = (lockNoteCheckbox != null) ? lockNoteCheckbox.checked : false;
-		var ex   = (xStepper != null) ? xStepper.value : 0.0;
-		var ey   = (yStepper != null) ? yStepper.value : 0.0;
-		var zm   = (zoomStepper != null) ? zoomStepper.value : -1.0;
-
-		var newEv:CameraEvent = {
-			step: stepFloat,
-			target_type: tt,
-			target_id: tid,
-			is_relative: rel,
-			x: ex,
-			y: ey,
-			zoom: zm,
-			ease: ease,
-			duration: dur,
-			standalone: sa,
-			lock_note_movement: ln
-		};
-
-		cameraEvents.push(newEv);
-		cameraEvents.sort(function(a, b) return Reflect.compare(a.step, b.step));
-
-		selectedStep = stepFloat;
-		var stepEvents = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-		curEventSelected = stepEvents.indexOf(newEv);
-
-		recreatePins();
-		refreshInspector();
-	}
-
-	function onDeleteEvent():Void
-	{
-		if (selectedStep < 0) return;
-		var stepEvents = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-		if (stepEvents.length == 0) return;
-
-		var toRemove = stepEvents[curEventSelected];
-		cameraEvents.remove(toRemove);
-
-		var remaining = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-		if (remaining.length > 0)
-		{
-			curEventSelected = FlxMath.maxInt(0, curEventSelected - 1);
-		}
-		else
-		{
-			selectedStep = -1;
-			curEventSelected = 0;
-		}
-
-		recreatePins();
-		refreshInspector();
-		_splineDirty = true;
-	}
-
-	// ─── Inspector refresh ────────────────────────────────────────────────────
-	function refreshInspector(?skipPins:Bool = false):Void
-	{
-		_suppressUIUpdate = true;
-
-		var ev:CameraEvent = getSelectedSubEvent();
-
-		if (ev != null)
-		{
-			stepLabel.text = "Step: " + FlxMath.roundDecimal(ev.step, 2)
-				+ "   (" + FlxMath.roundDecimal(ev.step / 4.0, 2) + " beats)";
-
-			var stepEvents = cameraEvents.filter(function(e) return Math.abs(e.step - selectedStep) < 0.02);
-			selectedSubEventText.text = "Sub-Event: " + (curEventSelected + 1) + " / " + stepEvents.length;
-
-			targetTypeDropdown.selectedId    = ev.target_type;
-			targetIdStepper.value            = ev.target_id;
-			isRelativeCheckbox.checked       = ev.is_relative;
-			standaloneCheckbox.checked       = ev.standalone;
-			lockNoteCheckbox.checked         = ev.lock_note_movement;
-			xStepper.value                   = ev.x;
-			yStepper.value                   = ev.y;
-
-			var ease = (ev.ease != null && ev.ease.length > 0)
-				? ev.ease : "linear";
-			easeDropdown.selectedId          = ease;
-
-			durationStepper.value = ev.duration;
-			zoomStepper.value     = ev.zoom;
-
-			infoText.text =
-				"SELECTED EVENT\n" +
-				"Step:   "   + FlxMath.roundDecimal(ev.step, 2) + "\n" +
-				"Target: "   + ev.target_type +
-					(ev.target_type == "extra_char" ? " [" + ev.target_id + "]" : "") + "\n" +
-				"X: "        + FlxMath.roundDecimal(ev.x, 1) +
-				"  Y: "      + FlxMath.roundDecimal(ev.y, 1) + "\n" +
-				"Zoom: "     + FlxMath.roundDecimal(ev.zoom, 2) + "\n" +
-				"Duration: " + ev.duration + " beats\n" +
-				"Relative: " + ev.is_relative + "\n" +
-				"Ease: "     + ease;
-		}
-		else
-		{
-			stepLabel.text = "Step: - (no event)";
-			selectedSubEventText.text = "Sub-Event: None";
-			infoText.text =
-				"No event selected.\n\n" +
-				"Press [C] to capture current\n" +
-				"view values to UI controls,\n" +
-				"then click [Add Here] or\n" +
-				"[Edit Selected] to commit.";
-		}
-
-		_suppressUIUpdate = false;
-		if (!skipPins)
-			recreatePins();
-		updateWidgetVisibility();
-	}
-
-	public function updateCameraToEvent(ev:CameraEvent):Void
-	{
-		if (ev == null || !paused) return;
-		if (ev.target_type == "zoom")
-		{
-			if (ev.zoom != -1 && ev.zoom > 0)
-				defaultCamZoom = ev.zoom;
-		}
-		else if (ev.target_type == "default")
-		{
-			var gpPos = getGameplayCameraPosition();
-			camFollow.x = gpPos.x;
-			camFollow.y = gpPos.y;
-			gpPos.put();
-			var stageFile = StageData.getStageFile(PlayState.curStage);
-			if (stageFile != null)
-				defaultCamZoom = stageFile.defaultZoom;
-		}
-		else if (ev.target_type == "midpoint")
-		{
-			var dadMid = dad.getMidpoint();
-			var bfMid = boyfriend.getMidpoint();
-			camFollow.x = (dadMid.x + bfMid.x) * 0.5 + ev.x;
-			camFollow.y = (dadMid.y + bfMid.y) * 0.5 + ev.y;
-			dadMid.put();
-			bfMid.put();
-			if (ev.zoom != -1 && ev.zoom > 0)
-				defaultCamZoom = ev.zoom;
-		}
-		else
-		{
-			var tp = getCameraTargetPosition(ev.target_type, ev.target_id);
-			camFollow.x = ev.is_relative ? (tp.x + ev.x) : ev.x;
-			camFollow.y = ev.is_relative ? (tp.y + ev.y) : ev.y;
-			if (ev.zoom != -1 && ev.zoom > 0)
-				defaultCamZoom = ev.zoom;
-		}
-		_splineDirty = true;
-	}
-
-	public function getEventWorldPosition(ev:CameraEvent, index:Int):FlxPoint
-	{
-		if (ev == null) return new FlxPoint(0, 0);
-		if (ev.target_type == "zoom")
-		{
-			if (index > 0)
-			{
-				return getEventWorldPosition(cameraEvents[index - 1], index - 1);
-			}
-			return getDefaultCameraPosition();
-		}
-		else if (ev.target_type == "default")
-		{
-			return getGameplayCameraPosition();
-		}
-		else if (ev.target_type == "midpoint")
-		{
-			var dadMid = dad.getMidpoint();
-			var bfMid = boyfriend.getMidpoint();
-			var mx = (dadMid.x + bfMid.x) * 0.5 + ev.x;
-			var my = (dadMid.y + bfMid.y) * 0.5 + ev.y;
-			dadMid.put();
-			bfMid.put();
-			return new FlxPoint(mx, my);
-		}
-		else
-		{
-			var tp = getCameraTargetPosition(ev.target_type, ev.target_id);
-			var wx = ev.is_relative ? (tp.x + ev.x) : ev.x;
-			var wy = ev.is_relative ? (tp.y + ev.y) : ev.y;
-			return new FlxPoint(wx, wy);
-		}
-	}
-
-	function updateWidgetVisibility():Void
-	{
-		var hasSelection = (selectedStep >= 0);
-		
-		selectedSubEventText.visible = hasSelection;
-		prevSubEventBtn.visible = hasSelection;
-		nextSubEventBtn.visible = hasSelection;
-		addSubEventBtn.visible = hasSelection;
-		removeSubEventBtn.visible = hasSelection;
-
-		var type = (targetTypeDropdown != null) ? targetTypeDropdown.selectedId : "global";
-
-		var showId = (type == "extra_char");
-		var showRelative = (type != "global" && type != "zoom" && type != "default" && type != "midpoint");
-		var showStandalone = (type != "zoom" && type != "default" && type != "midpoint");
-		var showLockNote = (type != "zoom" && type != "default");
-		var showCoords = (type != "zoom" && type != "default");
-		var showZoom = (type != "default");
-		var showDuration = true;
-		var showEase = true;
-
-		targetIdStepper.visible = showId;
-		targetIdLabel.visible = showId;
-
-		isRelativeCheckbox.visible = showRelative;
-		standaloneCheckbox.visible = showStandalone;
-		lockNoteCheckbox.visible = showLockNote;
-
-		xStepper.visible = showCoords;
-		xLabel.visible = showCoords;
-		yStepper.visible = showCoords;
-		yLabel.visible = showCoords;
-
-		zoomStepper.visible = showZoom;
-		zoomLabel.visible = showZoom;
-
-		durationStepper.visible = showDuration;
-		durationLabel.visible = showDuration;
-
-		easeDropdown.visible = showEase;
-		easeLabel.visible = showEase;
-	}
-
-	// ─── getEvent (numeric stepper changes) ──────────────────────────────────
-	override function getEvent(id:String, sender:Dynamic, data:Dynamic, ?params:Array<Dynamic>)
-	{
-		if (_suppressUIUpdate) return;
-		if (id == FlxUINumericStepper.CHANGE_EVENT && (sender is FlxUINumericStepper))
-		{
-			isManualPanning = false;
-			_splineDirty = true;
-		}
-	}
-
-	// ─── Pin recreation ───────────────────────────────────────────────────────
-	public function recreatePins():Void
-	{
-		pinsGroup.clear();
-		if (FlxG.sound.music == null || FlxG.sound.music.length <= 0) return;
-
-		var uniqueSteps:Array<Float> = [];
-		var stepToEventMap:Map<String, CameraEvent> = new Map<String, CameraEvent>();
-
-		for (ev in cameraEvents)
-		{
-			var found = false;
-			for (s in uniqueSteps)
-			{
-				if (Math.abs(s - ev.step) < 0.02)
-				{
-					found = true;
-					break;
-				}
-			}
-			if (!found)
-			{
-				uniqueSteps.push(ev.step);
-				stepToEventMap.set(Std.string(ev.step), ev);
-			}
-		}
-
-		updateTimelineBounds();
-		var visibleRange:Float = timelineEndStep - timelineStartStep;
-
-		for (stepVal in uniqueSteps)
-		{
-			if (stepVal < timelineStartStep || stepVal > timelineEndStep) continue;
-
-			var ev = stepToEventMap.get(Std.string(stepVal));
-			var pct:Float    = (stepVal - timelineStartStep) / visibleRange;
-			var px:Float     = TL_X + pct * TL_W;
-
-			var pin:CameraPin = new CameraPin(ev);
-			var isSelected    = (Math.abs(stepVal - selectedStep) < 0.02);
-			
-			var pinColor:FlxColor = 0xFF757575; // Slate grey for global/default
-			switch (ev.target_type)
-			{
-				case "dad":        pinColor = 0xFFFF00FF; // Magenta
-				case "bf":         pinColor = 0xFF00FFFF; // Cyan
-				case "gf":         pinColor = 0xFFFF0077; // Pink
-				case "extra_char": pinColor = 0xFF00FF00; // Lime Green
-			}
-
-			if (isSelected)
-			{
-				pin.makeGraphic(14, Std.int(TL_H) + 16, FlxColor.WHITE);
-				FlxSpriteUtil.drawRect(pin, 2, 2, 10, Std.int(TL_H) + 12, pinColor);
-				pin.x = px - 7;
-				pin.y = TL_Y - 8;
 			}
 			else
 			{
-				pin.makeGraphic(6, Std.int(TL_H) + 6, pinColor);
-				pin.x = px - 3;
-				pin.y = TL_Y - 3;
+				var duration = Math.max(0, (stepTime(step + number(entry.duration, 0) * 4) - stepTime(step)) / 1000);
+				var ease = eases.indexOf(entry.ease) >= 0 ? entry.ease : 'linear';
+				var target:String = entry.target_type == null ? 'global' : entry.target_type;
+				if (target != 'zoom') settings.push({kind: 'position', target: target == 'midpoint' || entry.is_relative == true || target == 'default' ? target : 'global',
+					targetId: Std.int(number(entry.target_id, 0)), x: number(entry.x, 0), y: number(entry.y, 0),
+					ease: ease, duration: duration, motion: entry.lock_note_movement == true ? 'fixed' : 'notes', standalone: entry.standalone == true});
+				if (number(entry.zoom, -1) > 0 || target == 'default') settings.push({kind: 'zoom', ease: ease,
+					duration: duration, value: Math.max(0.05, number(entry.zoom, 1)), reset: target == 'default'});
 			}
-			pin.scrollFactor.set(0, 0);
-			pin.cameras = [camEditor];
-			pinsGroup.add(pin);
+			if (settings.length == 0) continue;
+			var frame:CameraKeyframe = null;
+			for (existing in result) if (Math.abs(existing.step - step) < 0.00001) { frame = existing; break; }
+			if (frame == null) { frame = {step: step, settings: []}; result.push(frame); }
+			for (s in settings)
+			{
+				// A channel has one destination per marker; different channels remain independent.
+				frame.settings = frame.settings.filter(function(old) return old.kind != s.kind);
+				frame.settings.push(s);
+			}
 		}
-		_splineDirty = true;
+		result.sort(function(a, b) return Reflect.compare(a.step, b.step));
+		return result;
 	}
 
-	// ─── Seek ─────────────────────────────────────────────────────────────────
-	var lastSeekTime:Float = 0;
-	public function seekTo(newTime:Float):Void
+	function buildMoments():Void
 	{
-		if (FlxG.sound.music == null) return;
-		newTime = FlxMath.bound(newTime, 0, FlxG.sound.music.length);
-
-		// Fix missing chart on backwards seek by reloading notes
-		if (newTime < lastSeekTime - 100)
+		var step:Float = 0;
+		for (section in PlayState.SONG.notes)
 		{
-			KillNotes();
-			if (PlayState.SONG != null && PlayState.SONG.notes != null)
+			sectionSteps.push(step);
+			moments.push(stepTime(step));
+			for (note in section.sectionNotes)
 			{
-				for (section in PlayState.SONG.notes)
+				if (note[3] == 'No Animation') continue;
+				var id = Std.int(number(note[1], 0) / 4);
+				while (chartNotes.length <= id) chartNotes.push([]);
+				if (section.gfSection && id == 0 && state.gf != null) id = state.extraChars.length;
+				while (chartNotes.length <= id) chartNotes.push([]);
+				var char = id == state.extraChars.length ? state.gf : id < state.extraChars.length ? state.extraChars[id] : null;
+				var hold = Conductor.getCrotchetAtTime(note[0]) * 0.25 * 1.1 * (char == null ? 4 : char.singDuration);
+				var end = number(note[0], 0) + Math.max(0, number(note[2], 0)) + hold;
+				chartNotes[id].push({time: number(note[0], 0), end: end, direction: Std.int(number(note[1], 0)) % 4});
+				moments.push(note[0]);
+				moments.push(end);
+			}
+			step += (section.sectionBeats > 0 ? section.sectionBeats : 4) * 4;
+		}
+		for (notes in chartNotes) notes.sort(function(a, b) return Reflect.compare(a.time, b.time));
+		moments.sort(function(a, b) return Reflect.compare(a, b));
+	}
+
+	function sectionAt(time:Float):Int
+	{
+		var step = Conductor.getStep(time);
+		var i = 0;
+		while (i + 1 < sectionSteps.length && sectionSteps[i + 1] <= step) i++;
+		return i;
+	}
+
+	function focusAt(time:Float):Character
+	{
+		var section = PlayState.SONG.notes[sectionAt(time)];
+		if (section == null) return state.dad;
+		if (section.gfSection) return state.gf;
+		var id:Int = section.camFocus == null ? (section.mustHitSection ? 1 : 0) : section.camFocus;
+		return id >= 0 && id < state.extraChars.length ? state.extraChars[id] : state.dad;
+	}
+
+	function noteOffset(char:Character, time:Float):FlxPoint
+	{
+		var p = FlxPoint.get();
+		if (!ClientPrefs.camMove || state.inCutscene || char == null) return p;
+		var direction = -1;
+		if (replaying)
+		{
+			var id = char == state.gf ? state.extraChars.length : state.extraChars.indexOf(char);
+			if (id >= 0 && id < chartNotes.length)
+			{
+				var notes = chartNotes[id];
+				var lo = 0;
+				var hi = notes.length;
+				while (lo < hi) { var mid = (lo + hi) >> 1; if (notes[mid].time <= time) lo = mid + 1; else hi = mid; }
+				if (lo > 0 && time < notes[lo - 1].end) direction = notes[lo - 1].direction;
+			}
+		}
+		else if (char.animation.curAnim != null)
+		{
+			var name = char.animation.curAnim.name;
+			if (name.startsWith('singLEFT')) direction = 0;
+			else if (name.startsWith('singDOWN')) direction = 1;
+			else if (name.startsWith('singUP')) direction = 2;
+			else if (name.startsWith('singRIGHT')) direction = 3;
+		}
+		switch (direction) {
+			case 0: p.x = -ClientPrefs.camMoveStrength;
+			case 1: p.y = ClientPrefs.camMoveStrength;
+			case 2: p.y = -ClientPrefs.camMoveStrength;
+			case 3: p.x = ClientPrefs.camMoveStrength;
+		}
+		return p;
+	}
+
+	public function target(s:CameraSetting, time:Float):FlxPoint
+	{
+		var type = s == null ? 'default' : s.target;
+		var char:Character = null;
+		var p:FlxPoint;
+		if (s == null && !replaying) return FlxPoint.get(state.camFollow.x, state.camFollow.y);
+		if (type == 'default')
+		{
+			char = focusAt(time);
+			p = state.getCameraTargetPosition(char == state.gf ? 'gf' : 'extra_char', state.extraChars.indexOf(char));
+			if (!replaying && state.isCameraOnForcedPos) p.set(state.camFollow.x, state.camFollow.y);
+		}
+		else if (type == 'global') p = FlxPoint.get(s.x, s.y);
+		else if (type == 'midpoint')
+		{
+			var a = state.dad.getMidpoint();
+			var b = state.boyfriend.getMidpoint();
+			p = FlxPoint.get((a.x + b.x) / 2 + s.x, (a.y + b.y) / 2 + s.y);
+			a.put(); b.put();
+		}
+		else
+		{
+			p = state.getCameraTargetPosition(type, s.targetId == null ? 0 : s.targetId);
+			p.add(s.x, s.y);
+			char = switch (type) {
+				case 'dad': state.dad;
+				case 'bf': state.boyfriend;
+				case 'gf': state.gf;
+				case 'extra_char': s.targetId >= 0 && s.targetId < state.extraChars.length ? state.extraChars[s.targetId] : null;
+				default: null;
+			};
+		}
+		if (s == null || s.motion != 'fixed')
+		{
+			var offset = noteOffset(char == null ? focusAt(time) : char, time);
+			if (!state.isCameraOnForcedPos || type != 'default') p.add(offset.x, offset.y);
+			offset.put();
+		}
+		return p;
+	}
+
+	function evaluate(time:Float, ?targetTime:Float):Void
+	{
+		var dt = Math.max(0, time - lastTime) / 1000;
+		var p = target(position, targetTime == null ? time : targetTime);
+		if (position == null || position.ease == 'default')
+		{
+			var rate = position == null ? 2.4 * state.cameraSpeed : CameraTransition.SETTLE / Math.max(0.000001, position.duration);
+			var alpha = position != null && position.duration <= 0 ? 1 : 1 - Math.exp(-rate * dt);
+			x += (p.x - x) * alpha;
+			y += (p.y - y) * alpha;
+		}
+		else
+		{
+			tx.to = p.x; ty.to = p.y;
+			x = tx.at(time); y = ty.at(time);
+		}
+		p.put();
+		if (zoom != null) z = zoom.reset == true && time >= tz.start + tz.duration * 1000 ? baseZoom : tz.at(time);
+		if (rotation != null) angle = ta.at(time);
+		lastTime = time;
+	}
+
+	function begin(frame:CameraKeyframe, time:Float):Void
+	{
+		for (s in frame.settings)
+		{
+			switch (s.kind) {
+				case 'position':
+					position = s;
+					var p = target(s, time);
+					tx.begin(x, p.x, time, s.duration, s.ease);
+					ty.begin(y, p.y, time, s.duration, s.ease);
+					p.put();
+				case 'zoom':
+					if (!ownsZoom() && !replaying) z = state.camGame.zoom / state.smartCamZoomMult;
+					zoom = s;
+					tz.begin(z, s.reset == true ? baseZoom : s.value, time, s.duration, s.ease);
+				case 'rotation':
+					if (rotation == null && !replaying) angle = state.camGame.angle;
+					rotation = s;
+					ta.begin(angle, s.value, time, s.duration, s.ease);
+			}
+		}
+	}
+
+	public function update(time:Float):Void
+	{
+		if (time < lastTime - 1) { seek(time); return; }
+		while (cursor < frames.length && stepTime(frames[cursor].step) <= time)
+		{
+			var frame = frames[cursor++];
+			var at = stepTime(frame.step);
+			evaluate(at);
+			begin(frame, at);
+		}
+		evaluate(time);
+		apply();
+	}
+
+	/** Replay discontinuities, never fake 30 FPS frames. Named eases are evaluated at exact song time. */
+	public function seek(time:Float):Void
+	{
+		replaying = true;
+		position = zoom = rotation = null;
+		cursor = 0;
+		lastTime = 0;
+		state.defaultCamZoom = baseZoom;
+		state.camGame.angle = baseAngle;
+		var radians = Math.abs(baseAngle) * Math.PI / 180;
+		state.smartCamZoomMult = state.smartCamera ? Math.abs(Math.cos(radians)) + (FlxG.width / FlxG.height) * Math.abs(Math.sin(radians)) : 1;
+		state.camGame.zoom = baseZoom * state.smartCamZoomMult;
+		var p = target(null, 0);
+		x = p.x; y = p.y; z = baseZoom; angle = baseAngle;
+		p.put();
+		var i = 0;
+		while (i < moments.length && moments[i] <= time)
+		{
+			var at = moments[i++];
+			// Use the previous target up to a discontinuity, then activate the new target.
+			if (at > lastTime) updateReplay(at);
+		}
+		updateReplay(Math.max(0, time));
+		evaluate(Math.max(0, time));
+		if (position == null)
+		{
+			var baseline = target(null, Math.max(0, time));
+			state.camFollow.set(baseline.x, baseline.y);
+			baseline.put();
+		}
+		replaying = false;
+		apply();
+	}
+
+	function updateReplay(time:Float):Void
+	{
+		while (cursor < frames.length && stepTime(frames[cursor].step) <= time)
+		{
+			var frame = frames[cursor++];
+			var at = stepTime(frame.step);
+			evaluate(at, at - 0.00001);
+			begin(frame, at);
+		}
+		evaluate(time, time - 0.00001);
+	}
+
+	public function ownsZoom():Bool
+	{
+		return zoom != null && !(zoom.reset == true && lastTime >= tz.start + tz.duration * 1000);
+	}
+
+	public function apply():Void
+	{
+		state.camFollowPos.setPosition(x, y);
+		if (position != null) state.camFollow.set(x, y);
+		if (rotation != null)
+		{
+			var previous = state.smartCamZoomMult;
+			state.camGame.angle = angle;
+			var radians = Math.abs(angle) * Math.PI / 180;
+			state.smartCamZoomMult = state.smartCamera ? Math.abs(Math.cos(radians)) + (FlxG.width / FlxG.height) * Math.abs(Math.sin(radians)) : 1;
+			if (!ownsZoom()) state.camGame.zoom *= state.smartCamZoomMult / Math.max(0.0001, previous);
+		}
+		if (zoom != null && !ownsZoom()) state.defaultCamZoom = baseZoom;
+		if (ownsZoom())
+		{
+			state.defaultCamZoom = Math.max(0.05, z);
+			state.camGame.zoom = Math.max(0.05, z) * state.smartCamZoomMult;
+		}
+	}
+}
+
+/** Compact, scrollable version of the dropdown used throughout the engine. */
+@:access(FlxUIDropDownMenuCustom)
+class CameraChoice extends FlxUIDropDownMenuCustom
+{
+	public function new(x:Float, y:Float, width:Int, choices:Array<String>, selected:String, change:String->Void)
+	{
+		var data = FlxUIDropDownMenuCustom.makeStrIdLabelArray(choices);
+		for (item in data) item.label = switch (item.name) {
+			case 'default': 'Default'; case 'global': 'World position'; case 'dad': 'Opponent';
+			case 'bf': 'Boyfriend'; case 'gf': 'Girlfriend'; case 'midpoint': 'Midpoint';
+			case 'extra_char': 'Character ID'; case 'position': 'Position'; case 'zoom': 'Zoom';
+			case 'rotation': 'Angle'; case 'notes': 'Follow notes'; case 'fixed': 'Fixed';
+			default: item.label;
+		};
+		super(x, y, data, change, new FlxUIDropDownHeader(width));
+		selectedId = selected;
+	}
+
+	override public function update(elapsed:Float):Void
+	{
+		super.update(elapsed);
+		if (dropPanel.visible)
+		{
+			var count = Std.int(Math.min(8, list.length - currentScroll));
+			var room = Std.int((dropDirection == Up ? header.y - 12 : FlxG.height - header.y - header.height - 12) / 20);
+			count = Std.int(Math.max(1, Math.min(count, room)));
+			dropPanel.resize(header.background.width, count * 20);
+			for (i in 0...list.length)
+			{
+				list[i].visible = i >= currentScroll && i < currentScroll + count;
+				list[i].active = list[i].visible;
+			}
+		}
+	}
+}
+
+/** All editor UI, persistence, interaction and runtime helpers intentionally live in this file. */
+@:access(PlayState)
+@:access(MusicBeatState)
+class CameraEditorState extends PlayState
+{
+	var camEditor:FlxCamera;
+	var chrome:FlxSpriteGroup;
+	var inspector:FlxUITabMenu;
+	var inspectorTab:FlxUI;
+	var timeline:FlxSprite;
+	var playhead:FlxSprite;
+	var timelineSignature:String = '';
+	var timelineLabels:FlxTypedGroup<FlxText>;
+	var status:FlxText;
+	var readout:FlxText;
+	var playButton:FlxButton;
+	var help:FlxSpriteGroup;
+	var dialog:FlxSpriteGroup;
+	var selected:CameraKeyframe;
+	var selectedSetting:Int = 0;
+	var inputs:Array<FlxUIInputText> = [];
+	var choices:Array<CameraChoice> = [];
+	var timelineChoice:CameraChoice;
+	var addKind:String = 'zoom';
+	var setters:Map<FlxUINumericStepper, Void->Void> = new Map();
+	var pendingInspector:Bool = false;
+	var refreshing:Bool = false;
+	var ready:Bool = false;
+	var uiVisible:Bool = true;
+	var freeView:Bool = false;
+	var savedContent:String = '';
+	var loadError:Bool = false;
+	var fpsVisible:Bool = false;
+	var undoStack:Array<String> = [];
+	var redoStack:Array<String> = [];
+	var clipboard:String;
+	var message:String = '';
+	var messageTime:Float = 0;
+	var snap:Float = 1;
+	var viewStart:Float = 0;
+	var viewSpan:Float = 128;
+	var totalSteps:Float = 128;
+	var timelineTop:Float;
+	var trackX:Float = 78;
+	var trackW:Float;
+	var inspectorX:Float;
+	var inspectorW:Float;
+	var cachedW:Int = 0;
+	var cachedH:Int = 0;
+	var dragging:Bool = false;
+	var resizing:CameraSetting;
+	var scrubbing:Bool = false;
+	var resumeAfterScrub:Bool = false;
+	var dragOffset:Float = 0;
+	var oldFrameStep:Float = 0;
+	var panning:Bool = false;
+	var mouseX:Float = 0;
+	var mouseY:Float = 0;
+	var lastClick:Float = -1000;
+	var lastClickStep:Float = -1000;
+	var chartEvents:Array<Note.EventNote> = [];
+	var mutedKeys:Array<flixel.input.keyboard.FlxKey>;
+	var mutedUp:Array<flixel.input.keyboard.FlxKey>;
+	var mutedDown:Array<flixel.input.keyboard.FlxKey>;
+
+	inline function setting():CameraSetting
+	{
+		return selected != null && selectedSetting >= 0 && selectedSetting < selected.settings.length ? selected.settings[selectedSetting] : null;
+	}
+
+	override public function create():Void
+	{
+		isCameraEditor = true;
+		cpuControlled = true;
+		practiceMode = true;
+		PlayState.isStoryMode = false;
+		PlayState.startOnTime = 0;
+		super.create();
+		if (camGame == null || camFollowPos == null) return;
+		cpuControlled = true;
+		practiceMode = true;
+		canPause = canReset = false;
+		debugKeysChart = [];
+		debugKeysCharacter = [];
+		paused = true;
+		startSong();
+		if (startTimer != null) startTimer.cancel();
+		camHUD.visible = false;
+		chartEvents = [for (event in eventNotes) Reflect.copy(event)];
+		DynamicStreamLoader.kill();
+		if (cameraDirector == null) cameraDirector = new CameraDirector(this, cameraTimeline);
+		loadError = cameraLoadError;
+		camEditor = new FlxCamera();
+		camEditor.bgColor = 0;
+		FlxG.cameras.add(camEditor, false);
+		CustomFadeTransition.nextCamera = camEditor;
+		FlxG.mouse.visible = true;
+		if (Main.fpsVar != null) { fpsVisible = Main.fpsVar.visible; Main.fpsVar.visible = false; }
+		mutedKeys = FlxG.sound.muteKeys;
+		mutedUp = FlxG.sound.volumeUpKeys;
+		mutedDown = FlxG.sound.volumeDownKeys;
+		FlxG.sound.muteKeys = [];
+		FlxG.sound.volumeUpKeys = [];
+		FlxG.sound.volumeDownKeys = [];
+		savedContent = serialize();
+		totalSteps = Math.max(16, Conductor.getStep(FlxG.sound.music.length));
+		viewSpan = Math.min(totalSteps, 128);
+		buildUI();
+		ready = true;
+		seekTo(0);
+		if (loadError) notify('Camera file could not be read. Save is blocked to protect it. See the log.', 12);
+		#if desktop
+		Discord.DiscordClient.changePresence('Camera Editor', PlayState.SONG.song);
+		#end
+	}
+
+	// Load the real stage, characters, scripts and strums, without a countdown or player input.
+	override public function startCountdown():Void
+	{
+		if (startedCountdown) return;
+		inCutscene = false;
+		skipArrowStartTween = true;
+		generateStaticArrows(0, 0, 0);
+		generateStaticArrows(1, 1, 0);
+		startedCountdown = true;
+		Conductor.songPosition = 0;
+		callOnLuas('onStartCountdown', []);
+		setOnLuas('startedCountdown', true);
+		callOnLuas('onCountdownStarted', []);
+	}
+
+	override function openPauseMenu():Void {}
+	override public function finishSong(?ignoreNoteOffset:Bool = false):Void
+	{
+		if (!ready) return;
+		setPlaying(false);
+		seekTo(0);
+	}
+
+	override function closeSubState():Void
+	{
+		var pause = paused;
+		paused = false;
+		super.closeSubState();
+		paused = pause;
+	}
+
+	function serialize():String
+	{
+		return Json.stringify({version: 2, camera_timeline: cameraTimeline}, null, '\t');
+	}
+
+	function remember():Void
+	{
+		var content = serialize();
+		if (undoStack.length == 0 || undoStack[undoStack.length - 1] != content) undoStack.push(content);
+		if (undoStack.length > 100) undoStack.shift();
+		redoStack = [];
+	}
+
+	function restore(content:String):Void
+	{
+		var step = selected == null ? -1 : selected.step;
+		cameraTimeline = cast Json.parse(content).camera_timeline;
+		selected = null;
+		for (frame in cameraTimeline) if (Math.abs(frame.step - step) < 0.0001) selected = frame;
+		if (selected == null && cameraTimeline.length > 0) selected = cameraTimeline[0];
+		selectedSetting = 0;
+		changed(true);
+	}
+
+	function undo(redo:Bool = false):Void
+	{
+		var from = redo ? redoStack : undoStack;
+		if (from.length == 0) return;
+		(redo ? undoStack : redoStack).push(serialize());
+		restore(from.pop());
+		notify(redo ? 'Redo' : 'Undo');
+	}
+
+	function changed(rebuild:Bool = false):Void
+	{
+		cameraTimeline.sort(function(a, b) return Reflect.compare(a.step, b.step));
+		cameraDirector.frames = cameraTimeline;
+		if (!freeView) cameraDirector.seek(Conductor.songPosition);
+		if (rebuild) pendingInspector = true;
+	}
+
+	function notify(text:String, seconds:Float = 3):Void
+	{
+		message = text;
+		messageTime = seconds;
+	}
+
+	function addText(group:FlxSpriteGroup, x:Float, y:Float, w:Float, text:String, size:Int = 12, color:FlxColor = FlxColor.WHITE):FlxText
+	{
+		var label = new FlxText(x, y, w, text, size);
+		label.setFormat(Paths.font('vcr.ttf'), size, color);
+		label.scrollFactor.set();
+		group.add(label);
+		return label;
+	}
+
+	function button(group:FlxSpriteGroup, x:Float, y:Float, text:String, action:Void->Void, color:FlxColor = 0xFFD4E6F1):FlxButton
+	{
+		var btn = new FlxButton(x, y, text, action);
+		btn.color = color;
+		btn.onUp.callback = function() { if (!menuOpen()) action(); };
+		group.add(btn);
+		return btn;
+	}
+
+	function buildUI():Void
+	{
+		if (chrome != null) { remove(chrome, true); chrome.destroy(); }
+		if (inspector != null) { remove(inspector, true); inspector.destroy(); inspector = null; }
+		if (timelineLabels != null) { remove(timelineLabels, true); timelineLabels.destroy(); }
+		cachedW = FlxG.width;
+		cachedH = FlxG.height;
+		timelineTop = FlxG.height - 202;
+		trackW = FlxG.width - trackX - 18;
+		inspectorW = Math.min(340, Math.max(286, FlxG.width * 0.265));
+		inspectorX = FlxG.width - inspectorW - 12;
+		chrome = new FlxSpriteGroup();
+		chrome.cameras = [camEditor];
+		chrome.add(new FlxSprite().makeGraphic(FlxG.width, 48, 0xEE17131F));
+		addText(chrome, 14, 6, 350, 'CAMERA EDITOR  /  ' + PlayState.SONG.song, 16);
+		readout = addText(chrome, 14, 27, FlxG.width - 450, '', 11, 0xFFCEC4E3);
+		button(chrome, FlxG.width - 348, 13, 'Save [^S]', saveCameraConfig, 0xFF8AD490);
+		button(chrome, FlxG.width - 262, 13, 'HUD [TAB]', toggleUI);
+		button(chrome, FlxG.width - 176, 13, 'Help [H]', toggleHelp);
+		button(chrome, FlxG.width - 90, 13, 'Exit', requestExit, 0xFFFFB1B1);
+		chrome.add(new FlxSprite(0, timelineTop).makeGraphic(FlxG.width, 202, 0xF2181520));
+		playButton = button(chrome, 12, timelineTop + 8, 'Play [SPC]', function() setPlaying(paused), 0xFF8AD490);
+		button(chrome, 98, timelineTop + 8, '< Event', function() jumpEvent(-1));
+		button(chrome, 184, timelineTop + 8, 'Event >', function() jumpEvent(1));
+		button(chrome, 270, timelineTop + 8, 'New [N]', function() addFrame(), 0xFFCCB3FF);
+		button(chrome, 356, timelineTop + 8, 'Capture [C]', captureView, 0xFFFFD18C);
+		button(chrome, FlxG.width - 262, timelineTop + 8, 'Zoom -', function() zoomTimeline(1.5, 0.5));
+		button(chrome, FlxG.width - 176, timelineTop + 8, 'Zoom +', function() zoomTimeline(1 / 1.5, 0.5));
+		button(chrome, FlxG.width - 90, timelineTop + 8, 'Fit song', function() { viewStart = 0; viewSpan = totalSteps; });
+		addText(chrome, 8, timelineTop + 64, 68, 'EVENTS', 10, 0xFFCEC4E3);
+		addText(chrome, 8, timelineTop + 90, 68, 'POSITION', 10, 0xFF9FD7FF);
+		addText(chrome, 8, timelineTop + 115, 68, 'ZOOM', 10, 0xFFFFD18C);
+		addText(chrome, 8, timelineTop + 140, 68, 'ANGLE', 10, 0xFFD6B0FF);
+		timeline = new FlxSprite(trackX, timelineTop + 36).makeGraphic(Std.int(trackW), 126, FlxColor.TRANSPARENT, true);
+		chrome.add(timeline);
+		playhead = new FlxSprite(trackX, timelineTop + 36).makeGraphic(2, 126, 0xFFFF666E);
+		chrome.add(playhead);
+		timelineSignature = '';
+		timelineChoice = new CameraChoice(78, timelineTop + 170, 112, ['1 step', '1/2 step', '1/4 step', '1 beat', 'Off'], snapLabel(), function(value) {
+			snap = switch (value) { case '1/2 step': 0.5; case '1/4 step': 0.25; case '1 beat': 4; case 'Off': 0; default: 1; };
+		});
+		timelineChoice.dropDirection = Up;
+		chrome.add(timelineChoice);
+		status = addText(chrome, 202, timelineTop + 174, FlxG.width - 212, '', 11);
+		add(chrome);
+		timelineLabels = new FlxTypedGroup<FlxText>();
+		timelineLabels.cameras = [camEditor];
+		add(timelineLabels);
+		buildInspector();
+		if (help != null) { remove(help, true); help.destroy(); help = null; }
+		chrome.visible = timelineLabels.visible = uiVisible;
+		inspector.visible = uiVisible;
+	}
+
+	function snapLabel():String
+	{
+		return switch (snap) { case 0.5: '1/2 step'; case 0.25: '1/4 step'; case 4: '1 beat'; case 0: 'Off'; default: '1 step'; };
+	}
+
+	function buildInspector():Void
+	{
+		if (inspector != null) { remove(inspector, true); inspector.destroy(); }
+		inputs = [];
+		choices = [];
+		setters = new Map();
+		refreshing = true;
+		inspector = new FlxUITabMenu(null, [{name: 'Event', label: 'Camera event'}], true);
+		inspector.resize(inspectorW, timelineTop - 66);
+		inspector.setPosition(inspectorX, 58);
+		inspector.scrollFactor.set();
+		inspector.cameras = [camEditor];
+		inspectorTab = new FlxUI(null, inspector);
+		inspectorTab.name = 'Event';
+		var tab = inspectorTab;
+		if (selected == null)
+		{
+			addText(tab, 12, 12, inspectorW - 24, 'No event selected', 16);
+			addText(tab, 12, 42, inspectorW - 24,
+				'Double-click a timeline lane or press N to create an event.\n\nAn event can hold position, zoom and angle together.\n\nARROWS / IJKL: arrange camera\nQ / E: zoom\nMiddle mouse: drag view\nC: capture view\nF: return to timeline', 12, FlxColor.BLACK);
+			button(tab, 12, 242, 'New event', function() addFrame(), 0xFFCCB3FF);
+		}
+		else
+		{
+			addText(tab, 12, 8, inspectorW - 24, 'EVENT  /  ' + selected.settings.length + ' settings', 13, FlxColor.BLACK);
+			numeric(12, 31, 'Step', selected.step, 0, totalSteps, snap > 0 ? snap : 0.25, 3, function(v) {
+				var destination = snapped(v);
+				if (occupied(destination, selected)) { notify('Another event is already at that step.'); pendingInspector = true; return; }
+				remember(); selected.step = destination; changed();
+			});
+			button(tab, inspectorW - 178, 47, 'Duplicate', duplicateFrame);
+			button(tab, inspectorW - 92, 47, 'Delete', deleteFrame, 0xFFFFB1B1);
+			var s = setting();
+			if (s == null) { selectedSetting = 0; s = setting(); }
+			addText(tab, 12, 78, inspectorW - 110, (selectedSetting + 1) + '/' + selected.settings.length + '  ' + settingName(s), 13, FlxColor.BLACK);
+			var prev = button(tab, inspectorW - 94, 78, '<', function() selectSetting(-1));
+			prev.setGraphicSize(36, 20); prev.updateHitbox(); prev.label.fieldWidth = 36;
+			var next = button(tab, inspectorW - 52, 78, '>', function() selectSetting(1));
+			next.setGraphicSize(36, 20); next.updateHitbox(); next.label.fieldWidth = 36;
+			var missing = ['position', 'zoom', 'rotation'].filter(function(kind) {
+				for (entry in selected.settings) if (entry.kind == kind) return false;
+				return true;
+			});
+			if (missing.length > 0)
+			{
+				if (missing.indexOf(addKind) < 0) addKind = missing[0];
+				choice(12, 105, Std.int(inspectorW - 192), missing, addKind, function(v) addKind = v);
+				button(tab, inspectorW - 176, 105, 'Add setting', function() addSetting(addKind), 0xFF8AD490);
+			}
+			button(tab, inspectorW - 90, 105, 'Remove', removeSetting, 0xFFFFB1B1);
+			var y:Float = 139;
+			if (s.kind == 'position')
+			{
+				addText(tab, 12, y, 90, 'Target', 12, FlxColor.BLACK);
+				choice(106, y - 1, Std.int(inspectorW - 120), ['global', 'dad', 'bf', 'gf', 'midpoint', 'extra_char', 'default'], s.target, function(v) {
+					remember(); s.target = v; changed(true);
+				});
+				y += 35;
+				if (s.target == 'extra_char')
 				{
-					for (songNotes in section.sectionNotes)
+					numeric(12, y, 'Character ID', s.targetId, 0, Math.max(0, extraChars.length - 1), 1, 0, function(v) { remember(); s.targetId = Std.int(v); changed(); });
+					y += 42;
+				}
+				if (s.target != 'default')
+				{
+					numeric(12, y, s.target == 'global' ? 'World X' : 'Offset X', s.x, -100000, 100000, 10, 2, function(v) { remember(); s.x = v; changed(); });
+					numeric(inspectorW / 2, y, s.target == 'global' ? 'World Y' : 'Offset Y', s.y, -100000, 100000, 10, 2, function(v) { remember(); s.y = v; changed(); });
+					y += 44;
+				}
+				addText(tab, 12, y + 3, 90, 'Sing motion', 12, FlxColor.BLACK);
+				choice(106, y, Std.int(inspectorW - 120), ['notes', 'fixed'], s.motion, function(v) { remember(); s.motion = v; changed(); });
+				y += 36;
+			}
+			else if (s.kind == 'zoom')
+			{
+				addText(tab, 12, y + 3, 90, 'Zoom mode', 12, FlxColor.BLACK);
+				choice(106, y, Std.int(inspectorW - 120), ['Custom', 'Stage default'], s.reset == true ? 'Stage default' : 'Custom', function(v) {
+					remember(); s.reset = v == 'Stage default'; changed(true);
+				});
+				y += 36;
+				if (s.reset != true)
+				{
+					numeric(12, y, 'Zoom', s.value, 0.05, 10, 0.05, 3, function(v) { remember(); s.value = v; changed(); });
+					y += 44;
+				}
+			}
+			else
+			{
+				numeric(12, y, 'Angle (degrees)', s.value, -3600, 3600, 1, 2, function(v) { remember(); s.value = v; changed(); });
+				y += 44;
+			}
+			addText(tab, 12, y + 3, 90, 'Ease', 12, FlxColor.BLACK);
+			choice(106, y, Std.int(inspectorW - 120), CameraDirector.eases, s.ease, function(v) { remember(); s.ease = v; changed(true); });
+			y += 32;
+			if (s.ease != 'instant')
+			{
+				numeric(12, y, s.ease == 'default' ? 'Duration (s to 99%)' : 'Duration (seconds)', s.duration, 0, 600, 0.05, 4, function(v) { remember(); s.duration = v; changed(); });
+				button(tab, inspectorW - 100, y + 16, 'Auto time', function() {
+					remember(); s.duration = CameraDirector.secondsFor(s.kind, cameraSpeed, camZoomingDecay); changed(true);
+				});
+				y += 44;
+			}
+			button(tab, 12, y + 4, 'Preview', function() { seekTo(CameraDirector.stepTime(selected.step)); setPlaying(true); }, 0xFF8AD490);
+			button(tab, 98, y + 4, 'View target', viewTarget, 0xFFFFD18C);
+		}
+		// Dropdowns are last so their expanded lists draw above the other fields.
+		for (menu in choices) tab.add(menu);
+		inspector.addGroup(tab);
+		add(inspector);
+		inspector.visible = uiVisible;
+		inspector.active = !((help != null && help.visible) || dialog != null);
+		if (help != null) { remove(help, true); add(help); }
+		if (dialog != null) { remove(dialog, true); add(dialog); }
+		refreshing = false;
+		pendingInspector = false;
+	}
+
+	function numeric(x:Float, y:Float, label:String, value:Float, min:Float, max:Float, step:Float, decimals:Int, change:Float->Void):Void
+	{
+		addText(inspectorTab, x, y, inspectorW / 2 - 12, label, 11, FlxColor.BLACK);
+		var input = new FlxUIInputText(0, 0, 78, Std.string(value), 12);
+		inputs.push(input);
+		var field = new FlxUINumericStepper(x, y + 16, step, value, min, max, decimals, FlxUINumericStepper.STACK_HORIZONTAL, input);
+		setters.set(field, function() {
+			if (Math.isFinite(field.value)) change(field.value);
+		});
+		inspectorTab.add(field);
+	}
+
+	function choice(x:Float, y:Float, w:Int, items:Array<String>, value:String, change:String->Void):Void
+	{
+		choices.push(new CameraChoice(x, y, w, items, value, function(v) { if (!refreshing) change(v); }));
+	}
+
+	override function getEvent(id:String, sender:Dynamic, data:Dynamic, ?params:Array<Dynamic>):Void
+	{
+		if (!refreshing && !menuOpen() && id == FlxUINumericStepper.CHANGE_EVENT && Std.isOfType(sender, FlxUINumericStepper))
+		{
+			var callback = setters.get(cast sender);
+			if (callback != null) callback();
+		}
+		super.getEvent(id, sender, data, params);
+	}
+
+	function settingName(s:CameraSetting):String
+	{
+		return s == null ? '' : switch (s.kind) { case 'position': 'Camera Position'; case 'zoom': 'Camera Zoom'; default: 'Camera Angle'; };
+	}
+
+	function selectSetting(direction:Int):Void
+	{
+		if (selected == null) return;
+		selectedSetting = (selectedSetting + direction + selected.settings.length) % selected.settings.length;
+		pendingInspector = true;
+	}
+
+	function occupied(step:Float, except:CameraKeyframe = null):Bool
+	{
+		for (frame in cameraTimeline) if (frame != except && Math.abs(frame.step - step) < 0.0001) return true;
+		return false;
+	}
+
+	function newSetting(kind:String):CameraSetting
+	{
+		return {kind: kind, ease: 'default', duration: CameraDirector.secondsFor(kind, cameraSpeed, camZoomingDecay),
+			target: 'global', targetId: 0, x: camFollowPos.x, y: camFollowPos.y, value: kind == 'zoom' ? camGame.zoom / smartCamZoomMult : camGame.angle,
+			motion: 'notes', reset: false};
+	}
+
+	function addFrame(?at:Float, kind:String = 'position'):Void
+	{
+		var step = snapped(at == null ? Conductor.getStep(Conductor.songPosition) : at);
+		for (frame in cameraTimeline) if (Math.abs(frame.step - step) < 0.0001) { selectFrame(frame); return; }
+		remember();
+		selected = {step: step, settings: [newSetting(kind)]};
+		cameraTimeline.push(selected);
+		selectedSetting = 0;
+		if (kind == 'position') capturePosition(selected.settings[0]);
+		freeView = false;
+		changed(true);
+	}
+
+	function selectFrame(frame:CameraKeyframe):Void
+	{
+		selected = frame;
+		selectedSetting = 0;
+		pendingInspector = true;
+		seekTo(CameraDirector.stepTime(frame.step));
+	}
+
+	function addSetting(kind:String):Void
+	{
+		if (selected == null) return;
+		for (s in selected.settings) if (s.kind == kind) return;
+		remember();
+		selected.settings.push(newSetting(kind));
+		selectedSetting = selected.settings.length - 1;
+		if (kind == 'position') capturePosition(setting());
+		changed(true);
+	}
+
+	function removeSetting():Void
+	{
+		if (setting() == null) return;
+		if (selected.settings.length == 1) { deleteFrame(); return; }
+		remember();
+		selected.settings.splice(selectedSetting, 1);
+		selectedSetting = Std.int(Math.min(selectedSetting, selected.settings.length - 1));
+		changed(true);
+	}
+
+	function deleteFrame():Void
+	{
+		if (selected == null) return;
+		remember();
+		cameraTimeline.remove(selected);
+		selected = null;
+		selectedSetting = 0;
+		changed(true);
+	}
+
+	function duplicateFrame():Void
+	{
+		if (selected == null) return;
+		clipboard = Json.stringify(selected.settings);
+		var destination = selected.step + (snap > 0 ? snap : 1);
+		while (occupied(destination) && destination <= totalSteps) destination += snap > 0 ? snap : 1;
+		pasteFrame(destination);
+	}
+
+	function pasteFrame(at:Float):Void
+	{
+		if (clipboard == null) return;
+		at = snapped(at);
+		if (occupied(at)) { notify('Choose an empty step before pasting.'); return; }
+		remember();
+		selected = {step: at, settings: cast Json.parse(clipboard)};
+		cameraTimeline.push(selected);
+		selectedSetting = 0;
+		changed(true);
+	}
+
+	function capturePosition(s:CameraSetting):Void
+	{
+		s.target = 'global';
+		s.targetId = 0;
+		s.x = s.y = 0;
+		// Capture the visible composition without adding the singing offset twice.
+		var offset = cameraDirector.target(s, Conductor.songPosition);
+		s.x = camFollowPos.x - offset.x;
+		s.y = camFollowPos.y - offset.y;
+		offset.put();
+	}
+
+	function captureView():Void
+	{
+		if (!paused) setPlaying(false);
+		remember();
+		if (selected == null)
+		{
+			var step = snapped(Conductor.getStep(Conductor.songPosition));
+			for (frame in cameraTimeline) if (Math.abs(frame.step - step) < 0.0001) selected = frame;
+			if (selected == null) { selected = {step: step, settings: []}; cameraTimeline.push(selected); }
+		}
+		var pos:CameraSetting = null;
+		var zoom:CameraSetting = null;
+		for (s in selected.settings) { if (s.kind == 'position') pos = s; if (s.kind == 'zoom') zoom = s; }
+		if (pos == null) { pos = newSetting('position'); selected.settings.push(pos); }
+		if (zoom == null) { zoom = newSetting('zoom'); selected.settings.push(zoom); }
+		capturePosition(pos);
+		zoom.value = camGame.zoom / smartCamZoomMult;
+		zoom.reset = false;
+		freeView = true; // Keep the composition visible until transport resumes.
+		changed(true);
+		notify('View captured at step ' + FlxMath.roundDecimal(selected.step, 3));
+	}
+
+	function viewTarget():Void
+	{
+		if (selected == null) return;
+		setPlaying(false);
+		for (s in selected.settings)
+		{
+			switch (s.kind) {
+				case 'position':
+					var p = cameraDirector.target(s, Conductor.songPosition);
+					camFollowPos.setPosition(p.x, p.y); p.put();
+				case 'zoom': camGame.zoom = (s.reset == true ? cameraDirector.baseZoom : s.value) * smartCamZoomMult;
+				case 'rotation': camGame.angle = s.value;
+			}
+		}
+		freeView = true;
+	}
+
+	inline function snapped(step:Float):Float
+	{
+		return FlxMath.bound(snap > 0 && !FlxG.keys.pressed.ALT ? Math.round(step / snap) * snap : step, 0, totalSteps);
+	}
+
+	inline function screenStep(x:Float):Float
+	{
+		return viewStart + (x - trackX) / trackW * viewSpan;
+	}
+
+	inline function stepX(step:Float):Float
+	{
+		return (step - viewStart) / viewSpan * trackW;
+	}
+
+	function zoomTimeline(factor:Float, anchor:Float):Void
+	{
+		var step = viewStart + viewSpan * anchor;
+		viewSpan = FlxMath.bound(viewSpan * factor, Math.min(4, totalSteps), totalSteps);
+		viewStart = FlxMath.bound(step - viewSpan * anchor, 0, Math.max(0, totalSteps - viewSpan));
+	}
+
+	function jumpEvent(direction:Int):Void
+	{
+		var current = Conductor.getStep(Conductor.songPosition);
+		var nearest:CameraKeyframe = null;
+		for (frame in cameraTimeline)
+			if ((direction < 0 && frame.step < current - 0.001 && (nearest == null || frame.step > nearest.step))
+				|| (direction > 0 && frame.step > current + 0.001 && (nearest == null || frame.step < nearest.step))) nearest = frame;
+		if (nearest != null) { selectFrame(nearest); revealStep(nearest.step); }
+	}
+
+	function revealStep(step:Float):Void
+	{
+		if (step < viewStart || step > viewStart + viewSpan)
+			viewStart = FlxMath.bound(step - viewSpan * 0.25, 0, Math.max(0, totalSteps - viewSpan));
+	}
+
+	function drawTimeline():Void
+	{
+		var playX = stepX(Conductor.getStep(Conductor.songPosition));
+		playhead.x = trackX + playX;
+		playhead.visible = uiVisible && playX >= 0 && playX <= trackW;
+		// Only the playhead moves every frame. Avoid re-uploading the timeline bitmap during playback.
+		var signature = serialize() + ':' + viewStart + ':' + viewSpan + ':' + cameraTimeline.indexOf(selected) + ':' + selectedSetting;
+		if (signature == timelineSignature) return;
+		timelineSignature = signature;
+		timeline.pixels.fillRect(timeline.pixels.rect, 0xFF24202D);
+		for (label in timelineLabels.members) if (label != null) label.visible = false;
+		var labelIndex = 0;
+		for (y in [23, 48, 73, 98, 125]) FlxSpriteUtil.drawLine(timeline, 0, y, trackW, y, {color: 0xFF494150, thickness: 1});
+		var spacing:Float = 1;
+		while (spacing / viewSpan * trackW < 36) spacing *= 2;
+		var step = Math.ceil(viewStart / spacing) * spacing;
+		while (step <= viewStart + viewSpan)
+		{
+			var x = stepX(step);
+			FlxSpriteUtil.drawLine(timeline, x, 0, x, 126, {color: step % 16 == 0 ? 0xFF615171 : 0xFF38303F, thickness: 1});
+			var label:FlxText;
+			if (labelIndex < timelineLabels.length) label = timelineLabels.members[labelIndex];
+			else
+			{
+				label = new FlxText(0, 0, 64, '', 10);
+				label.setFormat(Paths.font('vcr.ttf'), 10, 0xFFCEC4E3);
+				label.scrollFactor.set();
+				timelineLabels.add(label);
+			}
+			labelIndex++;
+			label.setPosition(trackX + x + 3, timelineTop + 38);
+			label.text = Std.string(FlxMath.roundDecimal(step, 2));
+			label.visible = uiVisible && x <= trackW - 30;
+			step += spacing;
+		}
+		for (frame in cameraTimeline)
+		{
+			var px = stepX(frame.step);
+			for (s in frame.settings)
+			{
+				var row = s.kind == 'position' ? 51 : s.kind == 'zoom' ? 76 : 101;
+				var color:FlxColor = s.kind == 'position' ? 0xFF74B8EF : s.kind == 'zoom' ? 0xFFEDB865 : 0xFFB38BE7;
+				var end = s.ease == 'instant' ? px : stepX(Conductor.getStep(CameraDirector.stepTime(frame.step) + s.duration * 1000));
+				var left = Math.max(0, px);
+				var right = Math.min(trackW, end);
+				if (right > left) FlxSpriteUtil.drawRect(timeline, left, row + 6, right - left, 8, color & 0x66FFFFFF);
+				if (frame == selected && end >= 0 && end <= trackW && s.ease != 'instant')
+					FlxSpriteUtil.drawRect(timeline, end - 2, row + 2, 4, 16, color);
+				if (px >= 0 && px < trackW)
+				{
+					FlxSpriteUtil.drawRect(timeline, Math.max(0, px - 3), row + 2, 6, 16, color);
+					if (frame == selected && s == setting()) FlxSpriteUtil.drawRect(timeline, px + 5, row + 2, 3, 16, FlxColor.WHITE);
+				}
+			}
+			if (px >= 4 && px <= trackW - 4)
+			{
+				FlxSpriteUtil.drawRect(timeline, px - 5, 26, 10, 18, frame == selected ? FlxColor.WHITE : 0xFFA88BC7);
+				FlxSpriteUtil.drawLine(timeline, px, 44, px, 124, {color: frame == selected ? 0x88FFFFFF : 0x448D719F, thickness: 1});
+			}
+		}
+		// Overview thumb. Dragging this strip scrolls even when the timeline is zoomed in.
+		FlxSpriteUtil.drawRect(timeline, 0, 122, trackW, 4, 0xFF121016);
+		FlxSpriteUtil.drawRect(timeline, viewStart / totalSteps * trackW, 122, Math.max(4, viewSpan / totalSteps * trackW), 4, 0xFFB49ACD);
+		timeline.dirty = true;
+	}
+
+	function handleTimeline(mx:Float, my:Float, elapsed:Float):Void
+	{
+		var localY = my - timelineTop - 36;
+		var over = mx >= trackX && mx <= trackX + trackW && localY >= 0 && localY <= 126;
+		if (over && FlxG.mouse.wheel != 0)
+		{
+			if (FlxG.keys.pressed.CONTROL) zoomTimeline(Math.pow(1.25, -FlxG.mouse.wheel), FlxMath.bound((mx - trackX) / trackW, 0, 1));
+			else viewStart = FlxMath.bound(viewStart - FlxG.mouse.wheel * viewSpan * 0.08, 0, Math.max(0, totalSteps - viewSpan));
+		}
+		if (over && FlxG.mouse.justPressed)
+		{
+			if (localY >= 120) panning = true;
+			else
+			{
+				var hit:CameraKeyframe = null;
+				var hitSetting = -1;
+				var distance:Float = 10;
+				if (selected != null && localY >= 49)
+					for (s in selected.settings)
 					{
-						var daStrumTime:Float = songNotes[0];
-						var daNoteData:Int = Std.int(songNotes[1] % 4);
-						var noteCharID:Int = Std.int(songNotes[1] / 4);
-						
-						var gottaHitNote:Bool = (noteCharID == 1) ? true : (noteCharID < extraChars.length ? extraChars[noteCharID].isPlayer : false);
-						
-						var oldNote:Note = (unspawnNotes.length > 0) ? unspawnNotes[unspawnNotes.length - 1] : null;
-						var swagNote:Note = new Note(daStrumTime, daNoteData, oldNote);
-						swagNote.charNoteID = noteCharID;
-						swagNote.mustPress = gottaHitNote;
-						swagNote.sustainLength = songNotes[2];
-						swagNote.gfNote = (section.gfSection && (songNotes[1] < 4));
-						swagNote.noteType = songNotes[3];
-						if (!Std.isOfType(songNotes[3], String))
-							swagNote.noteType = editors.ChartingState.noteTypeList[songNotes[3]];
-						swagNote.scrollFactor.set();
-						var susLength:Float = swagNote.sustainLength / Conductor.stepCrochet;
-						unspawnNotes.push(swagNote);
-						
-						var floorSus:Int = Math.floor(susLength);
-						if (floorSus > 0)
+						var row = s.kind == 'position' ? 51 : s.kind == 'zoom' ? 76 : 101;
+						var end = trackX + stepX(Conductor.getStep(CameraDirector.stepTime(selected.step) + s.duration * 1000));
+						if (s.ease != 'instant' && Math.abs(end - mx) < 7 && localY >= row && localY < row + 22)
 						{
-							for (susNote in 0...floorSus + 1)
-							{
-								oldNote = unspawnNotes[unspawnNotes.length - 1];
-								var sustainNote:Note = new Note(daStrumTime + (Conductor.stepCrochet * susNote) + (Conductor.stepCrochet / FlxMath.roundDecimal(songSpeed, 2)), daNoteData, oldNote, true);
-								sustainNote.charNoteID = noteCharID;
-								sustainNote.mustPress = gottaHitNote;
-								sustainNote.gfNote = (section.gfSection && (songNotes[1] < 4));
-								sustainNote.noteType = swagNote.noteType;
-								sustainNote.scrollFactor.set();
-								swagNote.tail.push(sustainNote);
-								sustainNote.parent = swagNote;
-								unspawnNotes.push(sustainNote);
-								
-								if (sustainNote.mustPress) sustainNote.x += FlxG.width / 2;
-								else if (ClientPrefs.middleScroll) {
-									sustainNote.x += 310;
-									if (daNoteData > 1) sustainNote.x += FlxG.width / 2 + 25;
-								}
-							}
+							remember(); resizing = s; setPlaying(false); break;
 						}
-						
-						if (swagNote.mustPress) swagNote.x += FlxG.width / 2;
-						else if (ClientPrefs.middleScroll) {
-							swagNote.x += 310;
-							if (daNoteData > 1) swagNote.x += FlxG.width / 2 + 25;
+					}
+				if (resizing == null)
+				{
+					for (frame in cameraTimeline)
+					{
+						var dx = Math.abs(trackX + stepX(frame.step) - mx);
+						if (dx < distance && localY >= 24)
+						{
+							var index = -1;
+							if (localY >= 49)
+							{
+								var kind = localY < 74 ? 'position' : localY < 99 ? 'zoom' : 'rotation';
+								for (i in 0...frame.settings.length) if (frame.settings[i].kind == kind) index = i;
+								if (index < 0) continue;
+							}
+							hit = frame; hitSetting = index; distance = dx;
+						}
+					}
+					if (hit != null)
+					{
+						setPlaying(false);
+						selectFrame(hit);
+						if (hitSetting >= 0) selectedSetting = hitSetting;
+						remember(); dragging = true; oldFrameStep = hit.step;
+						dragOffset = screenStep(mx) - hit.step;
+					}
+					else
+					{
+						var clickedStep = snapped(screenStep(mx));
+						if (localY >= 24 && haxe.Timer.stamp() - lastClick < 0.32 && Math.abs(clickedStep - lastClickStep) < Math.max(1, snap))
+						{
+							addFrame(clickedStep, localY >= 99 ? 'rotation' : localY >= 74 ? 'zoom' : 'position');
+							lastClick = -1000;
+						}
+						else
+						{
+							lastClick = haxe.Timer.stamp(); lastClickStep = clickedStep;
+							resumeAfterScrub = !paused;
+							setPlaying(false); scrubbing = true;
 						}
 					}
 				}
-				unspawnNotes.sort(function(a, b) return Reflect.compare(a.strumTime, b.strumTime));
 			}
 		}
+		if (panning && FlxG.mouse.pressed)
+			viewStart = FlxMath.bound((mx - trackX) / trackW * totalSteps - viewSpan / 2, 0, Math.max(0, totalSteps - viewSpan));
+		if ((dragging || resizing != null) && FlxG.mouse.pressed)
+		{
+			if (mx < trackX + 16) viewStart -= viewSpan * elapsed * 0.7;
+			if (mx > trackX + trackW - 16) viewStart += viewSpan * elapsed * 0.7;
+			viewStart = FlxMath.bound(viewStart, 0, Math.max(0, totalSteps - viewSpan));
+		}
+		if (dragging && selected != null && FlxG.mouse.pressed)
+		{
+			selected.step = snapped(screenStep(mx) - dragOffset);
+			cameraTimeline.sort(function(a, b) return Reflect.compare(a.step, b.step));
+			cameraDirector.seek(CameraDirector.stepTime(selected.step));
+			Conductor.songPosition = CameraDirector.stepTime(selected.step);
+		}
+		if (resizing != null && FlxG.mouse.pressed)
+		{
+			resizing.duration = Math.max(0, (CameraDirector.stepTime(snapped(screenStep(mx))) - CameraDirector.stepTime(selected.step)) / 1000);
+			changed();
+		}
+		if (scrubbing && FlxG.mouse.pressed) seekTo(CameraDirector.stepTime(snapped(screenStep(mx))), false);
+		if (FlxG.mouse.justReleased)
+		{
+			if (dragging)
+			{
+				if (occupied(selected.step, selected)) { selected.step = oldFrameStep; notify('That step is occupied.'); }
+				changed(true);
+				seekTo(CameraDirector.stepTime(selected.step));
+			}
+			if (resizing != null) pendingInspector = true;
+			if (scrubbing) { seekTo(Conductor.songPosition); if (resumeAfterScrub) setPlaying(true); }
+			dragging = scrubbing = panning = false;
+			resizing = null;
+		}
+	}
 
-		Conductor.songPosition = newTime;
-		songTime               = newTime;
-		lastSeekTime           = newTime;
-
-		FlxG.sound.music.time = newTime;
-		if (vocals != null) vocals.time = newTime;
-
-		if (paused)
+	function setPlaying(play:Bool):Void
+	{
+		if (!ready && play) return;
+		if (play)
+		{
+			if (freeView) cameraDirector.seek(Conductor.songPosition);
+			freeView = false;
+			FlxG.sound.music.play(false, Conductor.songPosition);
+			if (vocals != null && PlayState.SONG.needsVoices) vocals.play(false, Conductor.songPosition);
+		}
+		else
 		{
 			FlxG.sound.music.pause();
 			if (vocals != null) vocals.pause();
 		}
-		else
-		{
-			FlxG.sound.music.play();
-			if (vocals != null) vocals.play();
-		}
+		paused = !play;
+		if (playButton != null) playButton.label.text = play ? 'Pause [SPC]' : 'Play [SPC]';
+	}
 
+	/** Seeking changes the song clock and reconstructs the same camera channels. */
+	public function seekTo(time:Float, rebuildNotes:Bool = true):Void
+	{
+		if (FlxG.sound.music == null) return;
+		time = FlxMath.bound(time, 0, Math.max(0, FlxG.sound.music.length - 1));
+		Conductor.songPosition = songTime = time;
+		Conductor.lastSongPos = time;
+		FlxG.sound.music.time = time;
+		if (vocals != null) vocals.time = Math.min(time, vocals.length);
 		startingSong = false;
-		_splineDirty = true;
-	}
-
-	override function closeSubState()
-	{
-		var wasPaused = paused;
-		// Trick PlayState into skipping its unpause logic
-		paused = false; 
-		super.closeSubState();
-		// Restore our editor's paused state
-		paused = wasPaused;
-	}
-
-	// ─── Update ──────────────────────────────────────────────────────────────
-	override function update(elapsed:Float)
-	{
-		if (!paused)
+		endingSong = false;
+		freeView = false;
+		var bpm = Conductor.getBPMFromSeconds(time);
+		Conductor.changeBPM(bpm.bpm);
+		curDecStep = Conductor.getStep(time);
+		curDecBeat = curDecStep / 4;
+		curStep = Math.floor(curDecStep);
+		curBeat = Math.floor(curDecBeat);
+		curSection = 0;
+		stepsToDo = 0;
+		for (section in PlayState.SONG.notes)
 		{
-			if (FlxG.sound.music != null && FlxG.sound.music.playing)
+			stepsToDo += Math.round((section.sectionBeats > 0 ? section.sectionBeats : 4) * 4);
+			if (stepsToDo > curStep) break;
+			curSection++;
+		}
+		if (rebuildNotes)
+		{
+			lastStepHit = curStep;
+			lastBeatHit = curBeat;
+			eventNotes = [for (event in chartEvents) if (event.strumTime >= time) Reflect.copy(event)];
+			rebuildChartNotes(time);
+			syncSinging(time);
+		}
+		cameraDirector.seek(time);
+		camGame.focusOn(FlxPoint.weak(camFollowPos.x, camFollowPos.y));
+	}
+
+	function syncSinging(time:Float):Void
+	{
+		var latest:Array<Dynamic> = [];
+		for (section in PlayState.SONG.notes)
+			for (note in section.sectionNotes)
 			{
-				Conductor.songPosition = FlxG.sound.music.time;
-				songTime = Conductor.songPosition;
-				
-				// Sync vocals
-				if (vocals != null && vocals.playing)
-				{
-					if (Math.abs(vocals.time - Conductor.songPosition) > 20)
+				var at:Float = note[0];
+				if (at > time || note[3] == 'No Animation') continue;
+				var id = Std.int(note[1] / 4);
+				if (section.gfSection && id == 0) id = extraChars.length;
+				var previousTime:Float = latest[id] == null ? -1 : latest[id].time;
+				if (at >= previousTime)
+					latest[id] = {time: note[0], release: note[0] + Math.max(0, note[2]), direction: Std.int(note[1]) % 4,
+						alt: section.altAnim || note[3] == 'Alt Animation'};
+			}
+		for (id in 0...extraChars.length + 1)
+		{
+			var char = id == extraChars.length ? gf : extraChars[id];
+			if (char == null || char.specialAnim) continue;
+			var note = latest[id];
+			var hold = Conductor.stepCrochet * 1.1 * char.singDuration;
+			if (note != null && time < note.release + hold)
+			{
+				var name = 'sing' + ['LEFT', 'DOWN', 'UP', 'RIGHT'][note.direction];
+				if (note.alt && char.animation.getByName(name + '-alt') != null) name += '-alt';
+				if (char.animation.getByName(name) != null) char.playAnim(name, true);
+				char.holdTimer = Math.max(0, time - note.release) / (1000 * playbackRate);
+			}
+			else { char.dance(); char.holdTimer = 0; }
+		}
+	}
+
+	function rebuildChartNotes(time:Float):Void
+	{
+		for (note in notes.members) if (note != null) note.destroy();
+		notes.clear();
+		for (note in unspawnNotes) note.destroy();
+		unspawnNotes = [];
+		for (section in PlayState.SONG.notes)
+			for (data in section.sectionNotes)
+			{
+				var at:Float = data[0];
+				if (at + Math.max(0, data[2]) < time - 50) continue;
+				var direction = Std.int(data[1]) % 4;
+				var id = Std.int(data[1] / 4);
+				var player = id == 1 || (id < extraChars.length && extraChars[id] != null && extraChars[id].isPlayer);
+				var note = new Note(at, direction);
+				note.charNoteID = id;
+				note.mustPress = player;
+				note.sustainLength = data[2];
+				note.gfNote = section.gfSection && id == 0;
+				note.noteType = Std.isOfType(data[3], String) ? data[3] : ChartingState.noteTypeList[data[3]];
+				note.scrollFactor.set();
+				positionNote(note);
+				if (at >= time - 50) unspawnNotes.push(note);
+				var length = Conductor.getBPMFromSeconds(at).stepCrochet;
+				var previous = note;
+				if (note.sustainLength > 0)
+					for (i in 0...Math.floor(note.sustainLength / length) + 1)
 					{
-						vocals.time = Conductor.songPosition;
+						var sustain = new Note(at + length * i + length / FlxMath.roundDecimal(songSpeed, 2), direction, previous, true);
+						sustain.charNoteID = id;
+						sustain.mustPress = player;
+						sustain.gfNote = note.gfNote;
+						sustain.noteType = note.noteType;
+						sustain.parent = note;
+						note.tail.push(sustain);
+						positionNote(sustain);
+						if (sustain.strumTime >= time - 50) unspawnNotes.push(sustain); else sustain.ignoreNote = true;
+						previous = sustain;
 					}
-				}
 			}
-		}
+		unspawnNotes.sort(function(a, b) return Reflect.compare(a.strumTime, b.strumTime));
+	}
 
-		var oldPos:Float = Conductor.songPosition;
-		
-		// Suppress PlayState camera tracking by spoofing isCameraOnForcedPos when paused
-		var wasForcedPos:Bool = isCameraOnForcedPos;
-		if (paused)
+	function positionNote(note:Note):Void
+	{
+		if (note.mustPress) note.x += FlxG.width / 2;
+		else if (ClientPrefs.middleScroll)
 		{
-			isCameraOnForcedPos = true;
+			note.x += 310;
+			if (note.noteData > 1) note.x += FlxG.width / 2 + 25;
 		}
+	}
 
-		// 1. FIX THE TICK RATE & UPDATE LOOP CYCLES: Call super.update at the very beginning of update
-		super.update(elapsed);
+	function textFocused():Bool
+	{
+		for (input in inputs) if (input.hasFocus) return true;
+		return false;
+	}
 
-		if (paused)
+	function menuOpen():Bool
+	{
+		if (timelineChoice != null && timelineChoice.dropPanel.visible) return true;
+		for (menu in choices) if (menu.dropPanel.visible) return true;
+		return false;
+	}
+
+	function handleKeys(elapsed:Float):Void
+	{
+		var ctrl = FlxG.keys.pressed.CONTROL;
+		if (ctrl && FlxG.keys.justPressed.S) saveCameraConfig();
+		if (textFocused() || menuOpen()) return;
+		if (ctrl)
 		{
-			Conductor.songPosition = oldPos;
-			songTime = oldPos;
-			isCameraOnForcedPos = wasForcedPos;
-		}
-
-		updateTimelineBounds();
-		if (timelineStartStep != lastStartStep || timelineEndStep != lastEndStep)
-		{
-			drawTimelineTicks();
-			recreatePins();
-			lastStartStep = timelineStartStep;
-			lastEndStep = timelineEndStep;
-		}
-
-		if (FlxG.keys.justPressed.H) {
-			helpPanel.visible = !helpPanel.visible;
-		}
-
-		if (helpPanel.visible) {
-			if (FlxG.mouse.justPressed || FlxG.keys.justPressed.ESCAPE) {
-				helpPanel.visible = false;
-			}
-			// Block interaction when help is visible, but do not double-call super.update
+			if (FlxG.keys.justPressed.Z) undo(FlxG.keys.pressed.SHIFT);
+			if (FlxG.keys.justPressed.Y) undo(true);
+			if (FlxG.keys.justPressed.D) duplicateFrame();
+			if (FlxG.keys.justPressed.C && selected != null) { clipboard = Json.stringify(selected.settings); notify('Event copied'); }
+			if (FlxG.keys.justPressed.V) pasteFrame(Conductor.getStep(Conductor.songPosition));
 			return;
 		}
-
-		// ── Block hotkeys when a text input has focus ─────────────────────
-		// (FlxUINumericStepper text fields can steal focus)
-		var blockInput:Bool = FlxG.keys.pressed.CONTROL; // allow CTRL combos through
-
-		// ── Ctrl + S = Save ───────────────────────────────────────────────
-		if (FlxG.keys.pressed.CONTROL && FlxG.keys.justPressed.S)
-			saveCameraConfig();
-
-		// ── SPACE = Play / Pause ──────────────────────────────────────────
-		if (FlxG.keys.justPressed.SPACE && !blockInput || (FlxG.keys.justPressed.SPACE && !FlxG.keys.pressed.CONTROL))
+		if (FlxG.keys.justPressed.TAB) toggleUI();
+		if (FlxG.keys.justPressed.H) toggleHelp();
+		if (FlxG.keys.justPressed.ESCAPE) { requestExit(); return; }
+		if (FlxG.keys.justPressed.SPACE) setPlaying(paused);
+		if (FlxG.keys.justPressed.N) addFrame();
+		if (FlxG.keys.justPressed.C) captureView();
+		if (FlxG.keys.justPressed.F) { freeView = false; cameraDirector.seek(Conductor.songPosition); }
+		if (FlxG.keys.justPressed.DELETE || FlxG.keys.justPressed.BACKSPACE) deleteFrame();
+		if (FlxG.keys.justPressed.HOME) { seekTo(0); revealStep(0); }
+		if (FlxG.keys.justPressed.END) { seekTo(FlxG.sound.music.length - 1); revealStep(totalSteps); }
+		if (FlxG.keys.justPressed.COMMA) jumpEvent(-1);
+		if (FlxG.keys.justPressed.PERIOD) jumpEvent(1);
+		if (FlxG.keys.pressed.ALT)
 		{
-			if (paused)
-			{
-				isManualPanning = false;
-				paused = false;
-				if (FlxG.sound.music != null)
-				{
-					FlxG.sound.music.time = Conductor.songPosition;
-					FlxG.sound.music.play();
-				}
-				if (vocals != null)
-				{
-					vocals.time = Conductor.songPosition;
-					vocals.play();
-				}
-				previousFrameTime = FlxG.game.ticks;
-			}
-			else
-			{
-				paused = true;
-				if (FlxG.sound.music != null) FlxG.sound.music.pause();
-				if (vocals != null) vocals.pause();
-			}
-		}
-
-		// ── Timeline clicks / scrubbing / dragging ─────────────────────────
-		var noFocus:Bool = !FlxG.keys.pressed.CONTROL;
-		if (noFocus)
-		{
-			var mousePos = FlxG.mouse.getScreenPosition(camEditor);
-			var mx = mousePos.x;
-			var my = mousePos.y;
-			var smx = mousePos.x;
-			var smy = mousePos.y;
-			var dX = smx - lastMouseX;
-			var dY = smy - lastMouseY;
-			lastMouseX = Std.int(smx);
-			lastMouseY = Std.int(smy);
-			mousePos.put();
-
-			var inTimelineY = (my >= TL_Y - 4 && my <= TL_Y + TL_H + 4);
-			var inTimelineX = (mx >= TL_X && mx <= TL_X + TL_W);
-
-			// ── Mouse Scroll to Zoom Editor or Timeline ──────────────────────────
-			if (FlxG.mouse.wheel != 0) {
-				if (inTimelineY && inTimelineX)
-				{
-					timelineZoom += FlxG.mouse.wheel * 0.5;
-					if (timelineZoom < 1.0) timelineZoom = 1.0;
-					if (timelineZoom > 50.0) timelineZoom = 50.0;
-					updateTimelineBounds();
-					drawTimelineTicks();
-					recreatePins();
-				}
-				else
-				{
-					isManualPanning = true;
-					defaultCamZoom += FlxG.mouse.wheel * 0.1;
-					if (defaultCamZoom < 0.1) defaultCamZoom = 0.1;
-					_splineDirty = true;
-					
-					if (selectedStep >= 0)
-					{
-						_suppressUIUpdate = true;
-						zoomStepper.value = defaultCamZoom;
-						_suppressUIUpdate = false;
-					}
-				}
-			}
-
-			// ── Mouse Drag Panning ──────────────────────────────────────────────
-			if (FlxG.mouse.pressedRight || FlxG.mouse.pressedMiddle)
-			{
-				isManualPanning = true;
-				var camSpeed = (defaultCamZoom > 0 ? 1/defaultCamZoom : 1);
-				var shiftX = -dX * camSpeed;
-				var shiftY = -dY * camSpeed;
-
-				camFollow.x += shiftX;
-				camFollow.y += shiftY;
-				_splineDirty = true;
-				
-				if (selectedStep >= 0)
-				{
-					_suppressUIUpdate = true;
-					var isRel = isRelativeCheckbox.checked;
-					var targetType = targetTypeDropdown.selectedId;
-					var targetId = Std.int(targetIdStepper.value);
-					if (isRel)
-					{
-						var tp = getCameraTargetPosition(targetType, targetId);
-						xStepper.value = camFollow.x - tp.x;
-						yStepper.value = camFollow.y - tp.y;
-					}
-					else
-					{
-						xStepper.value = camFollow.x;
-						yStepper.value = camFollow.y;
-					}
-					_suppressUIUpdate = false;
-				}
-			}
-
-
-
-			if (FlxG.mouse.justPressed)
-			{
-				if (inTimelineY && inTimelineX)
-				{
-					var hitPin:CameraPin = null;
-					for (pin in pinsGroup.members)
-					{
-						if (mx >= pin.x && mx <= pin.x + pin.width) { hitPin = pin; break; }
-					}
-
-					if (hitPin != null)
-					{
-						isManualPanning = false;
-						draggingPin = hitPin;
-						selectedStep = hitPin.event.step;
-						curEventSelected = 0;
-						seekTo(selectedStep * Conductor.stepCrochet);
-						refreshInspector();
-					}
-					else
-					{
-						isManualPanning = false;
-						_isScrubbing = true;
-						var pct = FlxMath.bound((mx - TL_X) / TL_W, 0, 1);
-						if (FlxG.sound.music != null)
-						{
-							updateTimelineBounds();
-							var targetStep = timelineStartStep + pct * (timelineEndStep - timelineStartStep);
-							var newTime = targetStep * Conductor.stepCrochet;
-							if (!FlxG.keys.pressed.SHIFT) {
-								var newStep = newTime / Conductor.stepCrochet;
-								newStep = Math.fround(newStep * 4.0) / 4.0;
-								newTime = newStep * Conductor.stepCrochet;
-							}
-							seekTo(newTime);
-						}
-					}
-				}
-			}
-			else if (FlxG.mouse.pressed)
-			{
-				if (draggingPin != null)
-				{
-					var pct = FlxMath.bound((mx - TL_X) / TL_W, 0, 1);
-					updateTimelineBounds();
-					var newStep = timelineStartStep + pct * (timelineEndStep - timelineStartStep);
-					
-					// Optional grid snapping (snap to 0.25 steps unless SHIFT is held)
-					if (!FlxG.keys.pressed.SHIFT)
-						newStep = Math.fround(newStep * 4.0) / 4.0;
-					
-					var origStep = draggingPin.event.step;
-					for (ev in cameraEvents)
-					{
-						if (Math.abs(ev.step - origStep) < 0.02)
-						{
-							ev.step = newStep;
-						}
-					}
-					
-					selectedStep = newStep;
-					
-					// Re-calculate X based on the snapped step
-					updateTimelineBounds();
-					var snappedPct = FlxMath.bound((newStep - timelineStartStep) / (timelineEndStep - timelineStartStep), 0, 1);
-					draggingPin.x = TL_X + snappedPct * TL_W;
-					
-					var snappedTime = newStep * Conductor.stepCrochet;
-					seekTo(snappedTime);
-					refreshInspector(true); // Skip pins recreation during drag
-				}
-				else if (_isScrubbing)
-				{
-					var pct = FlxMath.bound((mx - TL_X) / TL_W, 0, 1);
-					if (FlxG.sound.music != null)
-					{
-						updateTimelineBounds();
-						var targetStep = timelineStartStep + pct * (timelineEndStep - timelineStartStep);
-						var newTime = targetStep * Conductor.stepCrochet;
-						if (!FlxG.keys.pressed.SHIFT) {
-							var newStep = newTime / Conductor.stepCrochet;
-							newStep = Math.fround(newStep * 4.0) / 4.0;
-							newTime = newStep * Conductor.stepCrochet;
-						}
-						seekTo(newTime);
-					}
-				}
-			}
-			else if (FlxG.mouse.justReleased)
-			{
-				_isScrubbing = false;
-				if (draggingPin != null)
-				{
-					// Sort events and rebuild pins
-					cameraEvents.sort(function(a, b) return (a.step < b.step) ? -1 : 1);
-					recreatePins();
-					_splineDirty = true;
-					draggingPin = null;
-				}
-			}
-		}
-
-		// ── Seek keys — only fire if UI stepper NOT focused ───────────────
-		if (noFocus)
-		{
-			if (FlxG.keys.justPressed.LEFT)
-			{
-				isManualPanning = false;
-				seekTo(FlxG.keys.pressed.SHIFT
-					? Conductor.songPosition - 4 * Conductor.crochet
-					: Conductor.songPosition - 10000);
-			}
-			if (FlxG.keys.justPressed.RIGHT)
-			{
-				isManualPanning = false;
-				seekTo(FlxG.keys.pressed.SHIFT
-					? Conductor.songPosition + 4 * Conductor.crochet
-					: Conductor.songPosition + 10000);
-			}
-		}
-
-		if (FlxG.keys.justPressed.R)   { isManualPanning = false; seekTo(0); }
-		if (FlxG.keys.justPressed.END && FlxG.sound.music != null)
-			{ isManualPanning = false; seekTo(FlxG.sound.music.length); }
-
-		// ── TAB = Toggle UI visibility ────────────────────────────────────
-		if (FlxG.keys.justPressed.TAB)
-		{
-			isUIVisible         = !isUIVisible;
-			UI_mainbox.visible  = isUIVisible;
-			timelineBG.visible  = isUIVisible;
-			timelineTrack.visible= isUIVisible;
-			timelineProgress.visible= isUIVisible;
-			pinsGroup.visible   = isUIVisible;
-			splineCanvas.visible= isUIVisible;
-			infoText.visible    = isUIVisible;
-			playbackText.visible= isUIVisible;
-
-			topBar.visible          = isUIVisible;
-			bottomBar.visible       = isUIVisible;
-			guideFrame.visible      = isUIVisible;
-			infoBG.visible          = isUIVisible;
-			playbackBG.visible      = isUIVisible;
-			recStatusText.visible   = isUIVisible;
-			hudTimecodeText.visible = isUIVisible;
-		}
-
-		// ── Camera pan / zoom (IJKL + UO, only when paused) ─────────────
-		if (paused)
-		{
-			var spd  = 500 * elapsed * (FlxG.keys.pressed.SHIFT ? 3.0 : 1.0);
-			var zspd = 0.5  * elapsed * (FlxG.keys.pressed.SHIFT ? 3.0 : 1.0);
-			var panned = false;
-
-			if (FlxG.keys.pressed.I) { camFollow.y -= spd; panned = true; }
-			if (FlxG.keys.pressed.K) { camFollow.y += spd; panned = true; }
-			if (FlxG.keys.pressed.J) { camFollow.x -= spd; panned = true; }
-			if (FlxG.keys.pressed.L) { camFollow.x += spd; panned = true; }
-			if (FlxG.keys.pressed.U) { defaultCamZoom = Math.max(0.1, defaultCamZoom - zspd); panned = true; }
-			if (FlxG.keys.pressed.O) { defaultCamZoom += zspd;                                  panned = true; }
-
-			if (panned)
-			{
-				isManualPanning = true;
-				_splineDirty    = true;
-				
-				if (selectedStep >= 0)
-				{
-					_suppressUIUpdate = true;
-					var isRel = isRelativeCheckbox.checked;
-					var targetType = targetTypeDropdown.selectedId;
-					var targetId = Std.int(targetIdStepper.value);
-					if (isRel)
-					{
-						var tp = getCameraTargetPosition(targetType, targetId);
-						xStepper.value = camFollow.x - tp.x;
-						yStepper.value = camFollow.y - tp.y;
-					}
-					else
-					{
-						xStepper.value = camFollow.x;
-						yStepper.value = camFollow.y;
-					}
-					zoomStepper.value = defaultCamZoom;
-					_suppressUIUpdate = false;
-				}
-			}
-		}
-
-		// ── C = Capture current viewport as a new/updated event ───────────
-		if (FlxG.keys.justPressed.C)
-			captureCurrentView();
-
-		// ── Ctrl+Click (or M) = Place camera target ──────────────────────────
-		if (FlxG.mouse.justPressed && (FlxG.keys.pressed.CONTROL || FlxG.keys.pressed.M) && selectedStep >= 0)
-		{
-			var mousePos = FlxG.mouse.getScreenPosition(camEditor);
-			var mx = mousePos.x;
-			var my = mousePos.y;
-			mousePos.put();
-			
-			if (mx < 930 && my > 55 && my < 585)
-			{
-				var clickWorld:FlxPoint = FlxG.mouse.getWorldPosition(camGame);
-				_suppressUIUpdate = true;
-				var isRel = isRelativeCheckbox.checked;
-				var targetType = targetTypeDropdown.selectedId;
-				var targetId = Std.int(targetIdStepper.value);
-				if (isRel)
-				{
-					var tp = getCameraTargetPosition(targetType, targetId);
-					xStepper.value = clickWorld.x - tp.x;
-					yStepper.value = clickWorld.y - tp.y;
-				}
-				else
-				{
-					xStepper.value = clickWorld.x;
-					yStepper.value = clickWorld.y;
-				}
-				_suppressUIUpdate = false;
-				
-				camFollow.x  = clickWorld.x;
-				camFollow.y  = clickWorld.y;
-				isManualPanning = false; // lock to this position
-				_splineDirty = true;
-			}
-		}
-
-		// ── Playhead indicator update ──────────────────────────────────────
-		if (FlxG.sound.music != null && FlxG.sound.music.length > 0)
-		{
-			var currentStep = Conductor.songPosition / Conductor.stepCrochet;
-			var pct = FlxMath.bound((currentStep - timelineStartStep) / (timelineEndStep - timelineStartStep), 0, 1);
-			timelineProgress.x = TL_X + pct * TL_W - 1;
-		}
-
-		// ── Playback text ─────────────────────────────────────────────────
-		var stepF = Conductor.songPosition / Conductor.stepCrochet;
-		playbackText.text =
-			"Time:  " + FlxMath.roundDecimal(Conductor.songPosition / 1000.0, 2) + "s\n" +
-			"Step:  " + FlxMath.roundDecimal(stepF, 2) + "\n" +
-			"Beat:  " + FlxMath.roundDecimal(stepF / 4.0, 2) + "\n" +
-			"State: " + (paused ? "PAUSED" : "PLAYING") + "\n" +
-			"Events:" + cameraEvents.length + "\n" +
-			"Zoom:  " + FlxMath.roundDecimal(timelineZoom, 1) + "x";
-
-		// ── Viewfinder HUD Updates ─────────────────────────────────────────
-		_recBlinkTimer += elapsed;
-		if (_recBlinkTimer >= 1.0) _recBlinkTimer -= 1.0;
-		var showDot:Bool = (_recBlinkTimer < 0.5);
-
-		if (paused)
-		{
-			recStatusText.text = "STBY";
-			recStatusText.color = 0xFFFFB300; // Amber
-		}
-		else
-		{
-			recStatusText.text = showDot ? "● REC" : "  REC";
-			recStatusText.color = 0xFFE53935; // Red
-		}
-
-		var tcMinutes:Int = Math.floor(Conductor.songPosition / 60000);
-		var tcSeconds:Int = Math.floor((Conductor.songPosition % 60000) / 1000);
-		var tcMS:Int = Math.floor((Conductor.songPosition % 1000) / 10);
-		hudTimecodeText.text = (tcMinutes < 10 ? "0" : "") + tcMinutes + ":" + 
-		                       (tcSeconds < 10 ? "0" : "") + tcSeconds + ":" + 
-		                       (tcMS < 10 ? "0" : "") + tcMS;
-
-		if (paused && !isManualPanning)
-		{
-			updateCameraEvents(elapsed);
-		}
-
-		// Set game camera properties
-		camGame.scroll.x = camFollow.x - camGame.width * 0.5;
-		camGame.scroll.y = camFollow.y - camGame.height * 0.5;
-		camGame.zoom = defaultCamZoom;
-		
-		// Event-driven spline rendering: check if viewport actually changed or if manually marked dirty
-		if (camGame.scroll.x != lastCamX || camGame.scroll.y != lastCamY || camGame.zoom != lastCamZoom)
-		{
-			_splineDirty = true;
-			lastCamX = camGame.scroll.x;
-			lastCamY = camGame.scroll.y;
-			lastCamZoom = camGame.zoom;
-		}
-
-		if (_splineDirty) {
-			drawVisualSplines();
-			_splineDirty = false;
-		}
-	}
-
-	// ─── Capture current viewport as event ────────────────────────────────────
-	function captureCurrentView():Void
-	{
-		_suppressUIUpdate = true;
-		var cx:Float = camGame.scroll.x + camGame.width * 0.5;
-		var cy:Float = camGame.scroll.y + camGame.height * 0.5;
-
-		var tt   = (targetTypeDropdown != null) ? targetTypeDropdown.selectedId : "global";
-		var tid  = (targetIdStepper != null) ? Std.int(targetIdStepper.value) : 0;
-		var rel  = (isRelativeCheckbox != null) ? isRelativeCheckbox.checked : false;
-
-		if (rel)
-		{
-			var tp = getCameraTargetPosition(tt, tid);
-			xStepper.value = cx - tp.x;
-			yStepper.value = cy - tp.y;
-		}
-		else
-		{
-			xStepper.value = cx;
-			yStepper.value = cy;
-		}
-		zoomStepper.value = camGame.zoom;
-		_suppressUIUpdate = false;
-		
-		isManualPanning = false; // lock preview to these captured parameters
-		_splineDirty = true;
-		
-		FlxG.sound.play(Paths.sound('scrollMenu'));
-	}
-
-	// ─── Add / Update event in sorted list ────────────────────────────────────
-	public function addOrUpdateEvent(
-		step:Float, targetType:String, targetId:Int, isRelative:Bool,
-		xVal:Float, yVal:Float, zoomVal:Float, easeVal:String,
-		durationVal:Float, standaloneVal:Bool, lockNoteVal:Bool):CameraEvent
-	{
-		var event:CameraEvent = null;
-		for (e in cameraEvents)
-			if (Math.abs(e.step - step) < 0.02) { event = e; break; }
-
-		if (event == null)
-		{
-			event = {
-				step:               step,
-				target_type:        targetType,
-				target_id:          targetId,
-				is_relative:        isRelative,
-				x:                  xVal,
-				y:                  yVal,
-				zoom:               zoomVal,
-				ease:               easeVal,
-				duration:           durationVal,
-				standalone:         standaloneVal,
-				lock_note_movement: lockNoteVal
-			};
-			cameraEvents.push(event);
-		}
-		else
-		{
-			event.target_type        = targetType;
-			event.target_id          = targetId;
-			event.is_relative        = isRelative;
-			event.x                  = xVal;
-			event.y                  = yVal;
-			event.zoom               = zoomVal;
-			event.ease               = easeVal;
-			event.duration           = durationVal;
-			event.standalone         = standaloneVal;
-			event.lock_note_movement = lockNoteVal;
-		}
-
-		cameraEvents.sort(function(a, b) return Reflect.compare(a.step, b.step));
-		recreatePins();
-		_splineDirty = true;
-		return event;
-	}
-
-	// ─── World → screen coordinate conversion ────────────────────────────────
-	public function worldToScreen(worldX:Float, worldY:Float):FlxPoint
-	{
-		var sx = (worldX - camGame.scroll.x) * camGame.zoom;
-		var sy = (worldY - camGame.scroll.y) * camGame.zoom;
-		return new FlxPoint(sx, sy);
-	}
-
-	// ─── Update visible timeline bounds ──────────────────────────────────────
-	public function updateTimelineBounds():Void
-	{
-		if (FlxG.sound.music == null || FlxG.sound.music.length <= 0)
-		{
-			timelineStartStep = 0;
-			timelineEndStep = 100;
+			var amount = FlxG.keys.pressed.SHIFT ? 16 : snap > 0 ? snap : 1;
+			if (FlxG.keys.justPressed.LEFT) seekTo(CameraDirector.stepTime(Conductor.getStep(Conductor.songPosition) - amount));
+			if (FlxG.keys.justPressed.RIGHT) seekTo(CameraDirector.stepTime(Conductor.getStep(Conductor.songPosition) + amount));
 			return;
 		}
-
-		// Freeze bounds during drag or scrub to prevent jitter/shifting
-		if ((_isScrubbing || draggingPin != null) && timelineEndStep > timelineStartStep)
+		if (!paused) return;
+		var dx = (FlxG.keys.pressed.RIGHT || FlxG.keys.pressed.L ? 1 : 0) - (FlxG.keys.pressed.LEFT || FlxG.keys.pressed.J ? 1 : 0);
+		var dy = (FlxG.keys.pressed.DOWN || FlxG.keys.pressed.K ? 1 : 0) - (FlxG.keys.pressed.UP || FlxG.keys.pressed.I ? 1 : 0);
+		var dz = (FlxG.keys.pressed.E ? 1 : 0) - (FlxG.keys.pressed.Q ? 1 : 0);
+		if (dx != 0 || dy != 0 || dz != 0)
 		{
+			var speed = (FlxG.keys.pressed.SHIFT ? 900 : 300) * elapsed / camGame.zoom;
+			camFollowPos.x += dx * speed;
+			camFollowPos.y += dy * speed;
+			camGame.zoom = FlxMath.bound(camGame.zoom * Math.exp(dz * elapsed * (FlxG.keys.pressed.SHIFT ? 2 : 0.7)), 0.05, 10);
+			freeView = true;
+		}
+	}
+
+	override public function update(elapsed:Float):Void
+	{
+		if (!ready) { super.update(elapsed); return; }
+		if (pendingInspector && !textFocused() && !menuOpen()) buildInspector();
+		if (cachedW != FlxG.width || cachedH != FlxG.height) buildUI();
+		var modal = (help != null && help.visible) || dialog != null;
+		if (!paused && FlxG.sound.music.playing)
+		{
+			// PlayState advances its clock once below; seed it from the audio clock without double-advancing.
+			Conductor.songPosition = Math.max(0, FlxG.sound.music.time - elapsed * 1000 * playbackRate);
+		}
+		for (field in setters.keys()) field.active = !menuOpen();
+		super.update(paused ? 0 : elapsed);
+		if (modal)
+		{
+			if (FlxG.keys.justPressed.ESCAPE || FlxG.keys.justPressed.H)
+			{
+				if (dialog != null) closeDialog(); else toggleHelp();
+			}
 			return;
 		}
-
-		var totalSteps:Float = FlxG.sound.music.length / Conductor.stepCrochet;
-		var visibleStepsWindow:Float = totalSteps / timelineZoom;
-
-		if (timelineZoom <= 1.01)
+		handleKeys(elapsed);
+		if ((help != null && help.visible) || dialog != null) return;
+		var p = FlxG.mouse.getScreenPosition(camEditor);
+		var mx = p.x;
+		var my = p.y;
+		p.put();
+		if (uiVisible && !menuOpen() && !textFocused()) handleTimeline(mx, my, elapsed);
+		var overScene = !uiVisible || (my > 48 && my < timelineTop && mx < inspectorX - 8);
+		if (overScene && paused && !textFocused() && !menuOpen())
 		{
-			timelineStartStep = 0;
-			timelineEndStep = totalSteps;
-		}
-		else
-		{
-			var currentStep:Float = Conductor.songPosition / Conductor.stepCrochet;
-			timelineStartStep = currentStep - visibleStepsWindow * 0.5;
-			if (timelineStartStep < 0)
+			if (FlxG.mouse.pressedMiddle && !FlxG.mouse.justPressedMiddle)
 			{
-				timelineStartStep = 0;
+				camFollowPos.x -= (mx - mouseX) / camGame.zoom;
+				camFollowPos.y -= (my - mouseY) / camGame.zoom;
+				freeView = true;
 			}
-			timelineEndStep = timelineStartStep + visibleStepsWindow;
-			if (timelineEndStep > totalSteps)
-			{
-				timelineEndStep = totalSteps;
-				timelineStartStep = Math.max(0, timelineEndStep - visibleStepsWindow);
-			}
+			if (FlxG.mouse.wheel != 0) { camGame.zoom = FlxMath.bound(camGame.zoom * Math.pow(1.1, FlxG.mouse.wheel), 0.05, 10); freeView = true; }
 		}
+		mouseX = mx; mouseY = my;
+		if (!paused && !dragging && !scrubbing) revealStep(Conductor.getStep(Conductor.songPosition));
+		messageTime -= elapsed;
+		readout.text = (freeView ? 'FREE VIEW  [C capture / F return]' : paused ? 'PAUSED' : 'PLAYING')
+			+ ' | ' + timecode(Conductor.songPosition) + ' / ' + timecode(FlxG.sound.music.length)
+			+ ' | Step ' + FlxMath.roundDecimal(Conductor.getStep(Conductor.songPosition), 2)
+			+ ' | ' + (serialize() != savedContent ? '* UNSAVED' : 'Saved');
+		status.text = messageTime > 0 ? message : 'X ' + FlxMath.roundDecimal(camFollowPos.x, 1) + '  Y ' + FlxMath.roundDecimal(camFollowPos.y, 1)
+			+ '  Zoom ' + FlxMath.roundDecimal(camGame.zoom, 3) + ' | ARROWS: camera  ALT+ARROWS: seek  CTRL+wheel: timeline zoom';
+		if (uiVisible) drawTimeline();
 	}
 
-	// ─── Draw timeline beat grid ticks ────────────────────────────────────────
-	public function drawTimelineTicks():Void
+	static function timecode(ms:Float):String
 	{
-		if (FlxG.sound.music == null || FlxG.sound.music.length <= 0) return;
-
-		timelineBG.pixels.fillRect(timelineBG.pixels.rect, 0xFF141416);
-
-		var stepCrochet:Float = Conductor.stepCrochet;
-		var totalSteps:Float = FlxG.sound.music.length / stepCrochet;
-		var stepsPerBeat:Int = 4;
-		var totalBeats:Int = Math.floor(totalSteps / stepsPerBeat);
-
-		updateTimelineBounds();
-		var visibleRange:Float = timelineEndStep - timelineStartStep;
-
-		for (b in 0...totalBeats + 1)
-		{
-			var tickStep:Float = b * stepsPerBeat;
-			if (tickStep < timelineStartStep - stepsPerBeat) continue;
-			if (tickStep > timelineEndStep + stepsPerBeat) break;
-
-			var pct:Float = (tickStep - timelineStartStep) / visibleRange;
-			if (pct < 0 || pct > 1) continue;
-
-			var tx:Float = pct * TL_W;
-			var isMeasure:Bool = (b % 4 == 0);
-			var tickH:Float = isMeasure ? TL_H : TL_H * 0.5;
-			var tickColor:FlxColor = isMeasure ? 0xFF55555A : 0xFF2D2D32;
-			var thickness:Float = isMeasure ? 1.5 : 1.0;
-
-			FlxSpriteUtil.drawLine(timelineBG, tx, TL_H - tickH, tx, TL_H, {color: tickColor, thickness: thickness});
-		}
-
-		// Draw individual step ticks if zoomed in closely
-		if (visibleRange < 64)
-		{
-			for (s in Math.floor(timelineStartStep)...Math.ceil(timelineEndStep) + 1)
-			{
-				if (s % 4 == 0) continue; // Beat ticks already drawn
-				var pct:Float = (s - timelineStartStep) / visibleRange;
-				if (pct >= 0 && pct <= 1)
-				{
-					var tx:Float = pct * TL_W;
-					FlxSpriteUtil.drawLine(timelineBG, tx, TL_H - (TL_H * 0.25), tx, TL_H, {color: 0xFF1F1F24, thickness: 1.0});
-				}
-			}
-		}
+		var seconds = Std.int(ms / 1000);
+		return Std.int(seconds / 60) + ':' + StringTools.lpad(Std.string(seconds % 60), '0', 2) + '.' + StringTools.lpad(Std.string(Std.int(ms % 1000)), '0', 3);
 	}
 
-	// ─── Draw interpolation splines on the spline canvas ─────────────────────
-	public function drawVisualSplines():Void
+	function toggleUI():Void
 	{
-		_splineDirty = false;
-
-		// Clear canvas
-		splineCanvas.pixels.fillRect(splineCanvas.pixels.rect, 0);
-
-		if (!isUIVisible || cameraEvents.length == 0) return;
-
-		// Draw a dot for every event (using target-specific colors)
-		for (i in 0...cameraEvents.length)
+		uiVisible = !uiVisible;
+		timelineSignature = '';
+		chrome.visible = inspector.visible = timelineLabels.visible = uiVisible;
+		if (!uiVisible)
 		{
-			var ev = cameraEvents[i];
-			var wp = getEventWorldPosition(ev, i);
-			var sp = worldToScreen(wp.x, wp.y);
-			wp.put();
-
-			var dotColor:FlxColor = 0xFF757575;
-			switch (ev.target_type)
-			{
-				case "dad":        dotColor = 0xFFFF00FF;
-				case "bf":         dotColor = 0xFF00FFFF;
-				case "gf":         dotColor = 0xFFFF0077;
-				case "extra_char": dotColor = 0xFF00FF00;
-				case "zoom":       dotColor = 0xFFFFA500;
-				case "midpoint":   dotColor = 0xFFFFFF00;
-				case "default":    dotColor = 0xFF808080;
-			}
-
-			if (ev == selectedEvent)
-			{
-				FlxSpriteUtil.drawCircle(splineCanvas, sp.x, sp.y, 9, FlxColor.WHITE);
-				FlxSpriteUtil.drawCircle(splineCanvas, sp.x, sp.y, 7, dotColor);
-			}
-			else
-			{
-				FlxSpriteUtil.drawCircle(splineCanvas, sp.x, sp.y, 5, dotColor);
-			}
-		}
-
-		// Draw focus ring and target reticle for selected event
-		if (selectedEvent != null)
-		{
-			var selIndex = cameraEvents.indexOf(selectedEvent);
-			var wp = getEventWorldPosition(selectedEvent, selIndex);
-			var sp = worldToScreen(wp.x, wp.y);
-			wp.put();
-
-			// Draw focus ring around the target
-			FlxSpriteUtil.drawCircle(splineCanvas, sp.x, sp.y, 18, FlxColor.TRANSPARENT, {color: 0xFF00FFFF, thickness: 1.5});
-			// Draw crosshair notches
-			FlxSpriteUtil.drawLine(splineCanvas, sp.x - 25, sp.y, sp.x - 10, sp.y, {color: 0xFF00FFFF, thickness: 1.5});
-			FlxSpriteUtil.drawLine(splineCanvas, sp.x + 10, sp.y, sp.x + 25, sp.y, {color: 0xFF00FFFF, thickness: 1.5});
-			FlxSpriteUtil.drawLine(splineCanvas, sp.x, sp.y - 25, sp.x, sp.y - 10, {color: 0xFF00FFFF, thickness: 1.5});
-			FlxSpriteUtil.drawLine(splineCanvas, sp.x, sp.y + 10, sp.x, sp.y + 25, {color: 0xFF00FFFF, thickness: 1.5});
+			for (input in inputs) input.hasFocus = false;
+			for (menu in choices) if (menu.dropPanel.visible) @:privateAccess menu.showList(false);
+			if (timelineChoice.dropPanel.visible) @:privateAccess timelineChoice.showList(false);
 		}
 	}
 
-	// ─── Save camera.json ─────────────────────────────────────────────────────
+	function toggleHelp():Void
+	{
+		if (help != null && help.visible) { help.visible = false; chrome.active = inspector.active = true; return; }
+		setPlaying(false);
+		if (help == null)
+		{
+			help = new FlxSpriteGroup();
+			help.cameras = [camEditor];
+			help.add(new FlxSprite().makeGraphic(FlxG.width, FlxG.height, 0xF0181421));
+			addText(help, 70, 48, FlxG.width - 140, 'CAMERA EDITOR', 26, 0xFFD4B6FF);
+			addText(help, 70, 105, FlxG.width - 140,
+				'SPACE: play/pause    HOME / END: song start/end    , / .: previous/next event\n\n'
+				+ 'ARROWS or IJKL: arrange camera    SHIFT: faster    Q/E or scene wheel: zoom\n'
+				+ 'Middle mouse drag: pan    C: capture position + zoom into selected event\n'
+				+ 'F: discard free view and return to the timeline camera    TAB: clean runtime view\n\n'
+				+ 'Timeline ruler/empty space: seek    Double-click lane / N: new event\n'
+				+ 'Drag marker: move entire event    Drag channel endpoint: change its duration\n'
+				+ 'Wheel: scroll timeline    CTRL+wheel: zoom at cursor    Bottom strip: overview\n'
+				+ 'Snap selector: timeline grid    ALT while dragging: bypass snap\n'
+				+ 'ALT+LEFT/RIGHT: seek one grid unit    ALT+SHIFT+LEFT/RIGHT: seek 16 steps\n\n'
+				+ 'CTRL+S: save camera.json    CTRL+Z / CTRL+SHIFT+Z / CTRL+Y: undo / redo\n'
+				+ 'CTRL+C / CTRL+V: copy/paste event    CTRL+D: duplicate    DELETE: remove event\n\n'
+				+ 'Each event holds independent position, zoom and angle settings.\n'
+				+ 'Position target Default returns to chart focus; Stage default resets zoom.\n'
+				+ 'Sing motion: notes keeps the runtime direction offsets; fixed holds the frame.\n'
+				+ 'Default ease uses normal camera follow; duration is seconds to 99% of the move.\n'
+				+ 'Other ease durations are exact song seconds. Instant has no duration.\n\n'
+				+ 'H / ESC: close help', 16);
+			button(help, FlxG.width - 150, FlxG.height - 50, 'Close [H]', toggleHelp);
+			add(help);
+		}
+		help.visible = true;
+		chrome.active = inspector.active = false;
+	}
+
 	public function saveCameraConfig():Void
 	{
-		var content  = haxe.Json.stringify({camera_events: cameraEvents}, "\t");
-		var savePath = PlayState.getCameraSavePath(PlayState.SONG.song);
-
+		if (loadError) { notify('Save blocked: repair the existing camera.json first.', 6); return; }
 		#if sys
+		var path = PlayState.getCameraSavePath(PlayState.SONG.song);
 		try
 		{
-			var parts   = savePath.split('/');
-			parts.pop();
-			var dirPath = parts.join('/');
-			if (!sys.FileSystem.exists(dirPath))
-				sys.FileSystem.createDirectory(dirPath);
-			sys.io.File.saveContent(savePath, content);
-			trace("Camera config saved: " + savePath);
-
-			// Flash confirmation
-			var flash = new FlxText(TL_X, TL_Y - 70, TL_W, "CONFIG SAVED!", 18);
-			flash.setFormat(Paths.font("vcr.ttf"), 18, FlxColor.GREEN, CENTER,
-				FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
-			flash.scrollFactor.set(0, 0);
-			flash.cameras = [camEditor];
-			add(flash);
-			FlxG.sound.play(Paths.sound('confirmMenu'));
-			flixel.tweens.FlxTween.tween(flash, {alpha: 0}, 2.0,
-				{onComplete: function(_) flash.destroy()});
+			var content = serialize();
+			var dir = haxe.io.Path.directory(path);
+			if (!sys.FileSystem.exists(dir)) sys.FileSystem.createDirectory(dir);
+			// A failed write leaves the previous file intact.
+			sys.io.File.saveContent(path + '.tmp', content);
+			sys.FileSystem.rename(path + '.tmp', path);
+			savedContent = content;
+			notify('Saved: ' + path, 5);
 		}
-		catch (e:Dynamic)
-		{
-			trace("Error saving camera config: " + e);
-		}
+		catch (error:Dynamic) { notify('Save failed: ' + Std.string(error), 8); }
+		#else
+		notify('Saving camera.json requires a desktop build.', 5);
 		#end
 	}
 
-	// ─── Exit editor ──────────────────────────────────────────────────────────
+	function requestExit():Void
+	{
+		if (dialog != null) return;
+		if (serialize() == savedContent) { exitEditor(); return; }
+		setPlaying(false);
+		chrome.active = inspector.active = false;
+		dialog = new FlxSpriteGroup();
+		dialog.cameras = [camEditor];
+		dialog.add(new FlxSprite().makeGraphic(FlxG.width, FlxG.height, 0xDC17121F));
+		var x = (FlxG.width - 400) / 2;
+		var y = FlxG.height / 2 - 70;
+		addText(dialog, x, y, 400, 'Save camera changes before leaving?', 18);
+		button(dialog, x, y + 68, 'Save & exit', function() { saveCameraConfig(); if (serialize() == savedContent) exitEditor(); }, 0xFF8AD490);
+		button(dialog, x + 130, y + 68, 'Discard', exitEditor, 0xFFFFB1B1);
+		button(dialog, x + 260, y + 68, 'Cancel', closeDialog);
+		add(dialog);
+	}
+
+	function closeDialog():Void
+	{
+		if (dialog == null) return;
+		remove(dialog, true);
+		dialog.destroy();
+		dialog = null;
+		chrome.active = inspector.active = true;
+	}
+
 	public function exitEditor():Void
 	{
-		if (FlxG.sound.music != null)
-			FlxG.sound.music.volume = 0;
-		#if PRELOAD_ALL
-		FreeplayState.destroyFreeplayVocals();
-		#end
+		setPlaying(false);
+		MusicBeatState.switchState(new CameraSongSelectState());
+	}
+
+	override public function destroy():Void
+	{
+		if (mutedKeys != null) FlxG.sound.muteKeys = mutedKeys;
+		if (mutedUp != null) FlxG.sound.volumeUpKeys = mutedUp;
+		if (mutedDown != null) FlxG.sound.volumeDownKeys = mutedDown;
 		FlxG.mouse.visible = false;
-		MusicBeatState.switchState(new editors.MasterEditorMenu());
-		FlxG.sound.playMusic(Paths.music('freakyMenu'));
+		if (Main.fpsVar != null) Main.fpsVar.visible = fpsVisible;
+		FlxUI.forceFocus(false, null);
+		super.destroy();
 	}
 }

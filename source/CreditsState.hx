@@ -84,8 +84,10 @@ class CreditsState extends MusicBeatState
 		var pisspoop:Array<Array<String>> = [ //Name - Icon name - Description - Link - BG Color
 			['Oasis Engine Team'],
 			['Koszi',		        'koszipl',	        'Main programmer, Main Contributor\nThe folk who made mostly everything.',			'https://www.koszi.me/',            	'727DE4'],
-			['JkbItaPlay',		    'jkbitaplay',	    'Engine Designer, Composer, Thinker \n(basicaly he gabe the vision)',		        'https://www.youtube.com/@JkbAndKoszi',	'FCBA03'],
+			['JkbItaPlay',		    'jkbitaplay',	    'Engine Designer, Composer, Thinker \n(basicaly he gave the vision)',		        'https://www.youtube.com/@JkbAndKoszi',	'FCBA03'],
             ['Skwarix',             'skwarix',          'Additional Artist/Animator',                                                       'https://www.youtube.com/@skwarix8730', 'FFED1B24'],
+			['NyanDoesStuff', 		'nyan',				'Designer of palma from Oasis Engine logo',											'https://www.koszi.me/project?id=1',	'B264FF'],
+			['PhonedAlmond36',		'phonedalmond',		'Designer of full Oasis Engine logo',												'',										'FFFFFF'],
 			[''],
 			['Psych Engine Team'],
 			['Shadow Mario',		'shadowmario',		'Main Programmer of Psych Engine',								'https://twitter.com/Shadow_Mario_',	'444444'],
@@ -135,6 +137,10 @@ class CreditsState extends MusicBeatState
 				var icon:AttachedSprite = new AttachedSprite('credits/' + creditsStuff[i][1]);
 				icon.xAdd = optionText.width + 10;
 				icon.sprTracker = optionText;
+				
+				// Basically, large icons sucks
+				icon.setGraphicSize(150);
+				icon.updateHitbox();
 	
 				// using a FlxGroup is too much fuss!
 				iconArray.push(icon);

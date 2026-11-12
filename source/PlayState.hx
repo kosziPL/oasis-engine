@@ -47,6 +47,8 @@ import openfl.filters.BitmapFilter;
 import openfl.utils.Assets as OpenFlAssets;
 import editors.ChartingState;
 import editors.CharacterEditorState;
+import editors.CameraEditorState.CameraDirector;
+import editors.CameraEditorState.CameraKeyframe;
 import flixel.group.FlxSpriteGroup;
 import flixel.input.keyboard.FlxKey;
 import Note.EventNote;
@@ -129,7 +131,7 @@ class PlayState extends MusicBeatState
 	private var isCameraOnForcedPos:Bool = false;
 
 	#if (haxe >= "4.0.0") // Some backwards compatibility map support for chart editor
-	public var boyfriendMap:Map<String, Boyfriend> = new Map();
+	public var boyfriendMap:Map<String, Character> = new Map();
 	public var dadMap:Map<String, Character> = new Map();
 	public var gfMap:Map<String, Character> = new Map();
 
@@ -141,7 +143,7 @@ class PlayState extends MusicBeatState
 	public var modchartTexts:Map<String, ModchartText> = new Map<String, ModchartText>();
 	public var modchartSaves:Map<String, FlxSave> = new Map<String, FlxSave>();
 	#else
-	public var boyfriendMap:Map<String, Boyfriend> = new Map<String, Boyfriend>();
+	public var boyfriendMap:Map<String, Character> = new Map<String, Character>();
 	public var dadMap:Map<String, Character> = new Map<String, Character>();
 	public var gfMap:Map<String, Character> = new Map<String, Character>();
 	public var variables:Map<String, Dynamic> = new Map<String, Dynamic>();
@@ -188,12 +190,15 @@ class PlayState extends MusicBeatState
 
 	public var dad:Character = null;
 	public var gf:Character = null;
-	public var boyfriend:Boyfriend = null;
+	public var boyfriend:Character = null;
 	// Custom Characters
 	// public var extraOpponents:Array<Character> = [];
 	// public var extraPlayers:Array<Character> = [];
 	public var extraChars:Array<Character> = [];
-	public var cameraEvents:Array<CameraEvent> = [];
+	public var cameraEvents:Array<CameraEvent> = []; // Legacy type retained for scripts / the old editor.
+	public var cameraTimeline:Array<CameraKeyframe> = [];
+	public var cameraDirector:CameraDirector;
+	public var cameraLoadError:Bool = false;
 	public var activePosEvent:CameraEvent = null;
 	public var activeZoomEvent:CameraEvent = null;
 	public var isCameraEditor:Bool = false;
@@ -405,9 +410,10 @@ class PlayState extends MusicBeatState
 			playbackRate = ClientPrefs.getGameplaySetting('songspeed', 1);
 		}
 
-		// Initialize AsyncAssetPreloader
-		var preloaderGf = SONG.gfVersion != null ? SONG.gfVersion : 'gf';
-		AsyncAssetPreloader.init(SONG.song, [SONG.player1, SONG.player2, preloaderGf]);
+		// Character constructors load their atlases during create(). Queued cache publication
+		// cannot run until create() returns, so preloading those PNGs here decodes them twice.
+		// Keep the background preloader for audio, which is used after create().
+		AsyncAssetPreloader.init(SONG.song, []);
 
 		keysArray = [
 			ClientPrefs.copyKey(ClientPrefs.keyBinds.get('note_left')),
@@ -520,6 +526,7 @@ class PlayState extends MusicBeatState
 		normalizeOasisChart();
 
 		Conductor.mapBPMChanges(SONG);
+		CameraDirector.prepareBPMMap();
 		Conductor.changeBPM(SONG.bpm);
 
 		#if desktop
@@ -564,10 +571,12 @@ class PlayState extends MusicBeatState
 				camera_opponent: [0, 0],
 				camera_girlfriend: [0, 0],
 				camera_speed: 1,
+
+				// Combo and rate offset for current bacgroud (Player Position + Offset for player + Stage pref)
 				comboX: 0,
 				comboY: 0,
 				rateX: 0,
-				rateY: 0 // Combo and rates have their position what's tied to BF's position, this is an offset for background
+				rateY: 0 
 			};
 		}
 
@@ -584,6 +593,7 @@ class PlayState extends MusicBeatState
 		DAD_X = stageData.opponent[0];
 		DAD_Y = stageData.opponent[1];
 
+		cameraSpeed = stageData.camera_speed > 0 ? stageData.camera_speed : 1;
 		boyfriendCameraOffset = stageData.camera_boyfriend;
 		if (boyfriendCameraOffset == null) // Fucks sake should have done it since the start :rolling_eyes:
 			boyfriendCameraOffset = [0, 0];
@@ -716,7 +726,7 @@ class PlayState extends MusicBeatState
 		startCharacterLua(dad);
 		extraChars.push(dad);
 
-		boyfriend = new Boyfriend(0, 0, SONG.player1);
+		boyfriend = new Character(0, 0, SONG.player1, true);
 		startCharacterPos(boyfriend);
 		boyfriendGroup.add(boyfriend);
 		startCharacterLua(boyfriend);
@@ -998,6 +1008,7 @@ class PlayState extends MusicBeatState
 		botplayTxt.borderSize = 1.25;
 		botplayTxt.visible = cpuControlled;
 		add(botplayTxt);
+
 		ratingsText = new FlxText(FlxG.width - 220, 150, 200, "", 20);
 		ratingsText.setFormat(Paths.font("vcr.ttf"), 20, FlxColor.WHITE, RIGHT, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 		ratingsText.y = 300;
@@ -1366,7 +1377,7 @@ class PlayState extends MusicBeatState
 			case 0:
 				if (!boyfriendMap.exists(newCharacter))
 				{
-					var newBoyfriend:Boyfriend = new Boyfriend(0, 0, newCharacter);
+					var newBoyfriend:Character = new Character(0, 0, newCharacter, true);
 					boyfriendMap.set(newCharacter, newBoyfriend);
 					boyfriendGroup.add(newBoyfriend);
 					startCharacterPos(newBoyfriend);
@@ -1922,13 +1933,11 @@ class PlayState extends MusicBeatState
 	{
 		if (ClientPrefs.legacyUILayout)
 		{
-			newScoreTxt.text = 'Score: '
-				+ songScore
-				+ '\nRating: '
-				+ ratingName
-				+ (ratingName != '?' ? ' (${Highscore.floorDecimal(ratingPercent * 100, 2)}%)' : '');
+			newScoreTxt.text = 'Score: ' + songScore
+				+ '\nRating: ' + ratingName + (ratingName != '?' ? ' (${Highscore.floorDecimal(ratingPercent * 100, 2)}%)' : '')
+				+ (ClientPrefs.showingCounter ? "" : "\nMisses: " + misses);
 
-			coolRates.text = 'Rate: ' + ratingFC;
+//			coolRates.text = 'Rate: ' + ratingFC;
 		}
 		else
 		{
@@ -2122,37 +2131,22 @@ class PlayState extends MusicBeatState
 		}
 
 		cameraEvents = [];
-		var cameraFile:String = getCameraPath(SONG.song);
-		var cameraExists:Bool = false;
-		#if MODS_ALLOWED
-		if (sys.FileSystem.exists(cameraFile))
-			cameraExists = true;
-		#else
-		if (OpenFlAssets.exists(cameraFile))
-			cameraExists = true;
-		#end
-
-		if (cameraExists) {
-			try {
-				var content:String = "";
-				#if sys
-				content = sys.io.File.getContent(cameraFile);
-				#else
-				content = OpenFlAssets.getText(cameraFile);
-				#end
-				var parsed:CameraData = cast haxe.Json.parse(content);
-				if (parsed != null && parsed.camera_events != null) {
-					cameraEvents = parsed.camera_events;
-					for (ev in cameraEvents) {
-						if (Reflect.field(ev, "zoom") == null) ev.zoom = -1.0;
-						if (ev.ease == null) ev.ease = "linear";
-						if (ev.target_type == null) ev.target_type = "global";
-					}
-					cameraEvents.sort(function(a, b) return Reflect.compare(a.step, b.step));
-				}
-			} catch(e:Dynamic) {
-				trace("Error loading camera JSON: " + e);
-			}
+		cameraTimeline = [];
+		var cameraFile = getCameraPath(SONG.song);
+		try
+		{
+			var content:String = null;
+			#if sys
+			if (FileSystem.exists(cameraFile)) content = File.getContent(cameraFile);
+			#else
+			if (OpenFlAssets.exists(cameraFile)) content = OpenFlAssets.getText(cameraFile);
+			#end
+			if (content != null) cameraTimeline = CameraDirector.decode(Json.parse(content));
+		}
+		catch (error:Dynamic)
+		{
+			cameraLoadError = true;
+			trace('Error loading camera JSON: ' + error);
 		}
 
 		// NEW SHIT: Dynamic Stream Loader for Notes (Loads 5% initially and rest on backend)
@@ -2546,26 +2540,6 @@ class PlayState extends MusicBeatState
 
 		if (!inCutscene)
 		{
-			var lerpVal:Float = CoolUtil.boundTo(elapsed * 2.4 * cameraSpeed * playbackRate, 0, 1);
-			var isPosTransition:Bool = false;
-			if (activePosEvent != null)
-			{
-				var durationInSteps:Float = activePosEvent.duration * 4;
-				var stepFloat:Float = Conductor.songPosition / Conductor.stepCrochet;
-				if (durationInSteps > 0 && stepFloat >= activePosEvent.step && stepFloat < activePosEvent.step + durationInSteps)
-				{
-					isPosTransition = true;
-				}
-			}
-
-			if ((activePosEvent != null && activePosEvent.ease == "instant") || isPosTransition)
-			{
-				camFollowPos.setPosition(camFollow.x, camFollow.y);
-			}
-			else
-			{
-				camFollowPos.setPosition(FlxMath.lerp(camFollowPos.x, camFollow.x, lerpVal), FlxMath.lerp(camFollowPos.y, camFollow.y, lerpVal));
-			}
 			if (!startingSong
 				&& !endingSong
 				&& boyfriend.animation.curAnim != null
@@ -2741,7 +2715,7 @@ class PlayState extends MusicBeatState
 			MusicBeatState.switchState(new CharacterEditorState(SONG.player2));
 		}
 
-		if (startedCountdown)
+		if (startedCountdown && !paused)
 		{
 			Conductor.songPosition += FlxG.elapsed * 1000 * playbackRate;
 		}
@@ -2819,26 +2793,10 @@ class PlayState extends MusicBeatState
 		}
 		if (camZooming)
 		{
-			var isZoomTransition:Bool = false;
-			if (activeZoomEvent != null)
-			{
-				var durationInSteps:Float = activeZoomEvent.duration * 4;
-				var stepFloat:Float = Conductor.songPosition / Conductor.stepCrochet;
-				if (durationInSteps > 0 && stepFloat >= activeZoomEvent.step && stepFloat < activeZoomEvent.step + durationInSteps)
-				{
-					isZoomTransition = true;
-				}
-			}
-
 			var targetCamZoom:Float = defaultCamZoom * smartCamZoomMult;
-			if ((activeZoomEvent != null && activeZoomEvent.ease == "instant") || isZoomTransition)
-			{
-				FlxG.camera.zoom = targetCamZoom;
-			}
-			else
-			{
-				FlxG.camera.zoom = FlxMath.lerp(targetCamZoom, FlxG.camera.zoom, CoolUtil.boundTo(1 - (elapsed * 3.125 * camZoomingDecay * playbackRate), 0, 1));
-			}
+			if (!paused && (cameraDirector == null || !cameraDirector.ownsZoom()))
+				FlxG.camera.zoom = FlxMath.lerp(FlxG.camera.zoom, targetCamZoom, 1 - Math.exp(-elapsed * 3.125 * camZoomingDecay * playbackRate));
+
 			camHUD.zoom = FlxMath.lerp(1.0, camHUD.zoom, CoolUtil.boundTo(1 - (elapsed * 3.125 * camZoomingDecay * playbackRate), 0, 1));
 		}
 		else
@@ -2908,14 +2866,13 @@ class PlayState extends MusicBeatState
 				// boyfriend.animation.curAnim.finish();
 			}
 
-			// HoldTimer dla player-type extra chars (isPlayer=true nie ma holdTimer w Character.hx)
+			// Character.update() nalicza holdTimer; tutaj tylko powrót dodatkowych graczy do idle.
 			if (SONG.extraChars != null && FlxG.sound.music != null) {
 				for (i in 2...extraChars.length) {
 					var eChar:Character = extraChars[i];
 					if (eChar != null && eChar.isPlayer && eChar.animation.curAnim != null
 						&& eChar.animation.curAnim.name.startsWith('sing')
 						&& !eChar.animation.curAnim.name.endsWith('miss')) {
-						eChar.holdTimer += FlxG.elapsed;
 						if (eChar.holdTimer > Conductor.stepCrochet * (0.0011 / FlxG.sound.music.pitch) * eChar.singDuration) {
 							eChar.dance();
 							eChar.holdTimer = 0;
@@ -3015,7 +2972,7 @@ class PlayState extends MusicBeatState
 						}
 
 						if (char != null) {
-							char.playAnim(animToPlay, true);
+							char.playSingAnim(animToPlay, daNote.isSustainNote);
 							char.holdTimer = 0;
 						}
 
@@ -3125,13 +3082,7 @@ class PlayState extends MusicBeatState
 		setOnLuas('cameraY', camFollowPos.y);
 		setOnLuas('botPlay', cpuControlled);
 
-		activePosEvent = null;
-		activeZoomEvent = null;
-		if (hasActiveCameraEvent())
-		{
-			updateCameraEvents(elapsed);
-		}
-		else if (ClientPrefs.camMove && camFollow != null && !inCutscene && !isCameraOnForcedPos)
+		if (ClientPrefs.camMove && camFollow != null && !inCutscene && !isCameraOnForcedPos)
 		{
 			var gpPos = getGameplayCameraPosition();
 			var camX = gpPos.x;
@@ -3175,6 +3126,8 @@ class PlayState extends MusicBeatState
 			camFollow.x = camX + addX;
 			camFollow.y = camY + addY;
 		}
+
+		if (!paused && !inCutscene) updateCameraEvents(elapsed);
 
 		callOnLuas('onUpdatePost', [elapsed]);
 		}
@@ -4965,7 +4918,7 @@ class PlayState extends MusicBeatState
 
 			if (char != null)
 			{
-				char.playAnim(animToPlay, true);
+				char.playSingAnim(animToPlay, note.isSustainNote);
 				char.holdTimer = 0;
 			}
 		}
@@ -5090,13 +5043,13 @@ class PlayState extends MusicBeatState
 				{
 					if (gf != null)
 					{
-						gf.playAnim(animToPlay + note.animSuffix, true);
+						gf.playSingAnim(animToPlay + note.animSuffix, note.isSustainNote);
 						gf.holdTimer = 0;
 					}
 				}
 				else if (char != null)
 				{
-					char.playAnim(animToPlay + note.animSuffix, true);
+					char.playSingAnim(animToPlay + note.animSuffix, note.isSustainNote);
 					char.holdTimer = 0;
 				}
 
@@ -5402,12 +5355,13 @@ class PlayState extends MusicBeatState
 		{
 			var isStandalone:Bool = isCameraStandalone();
 
-			if (generatedMusic && !endingSong && !isCameraOnForcedPos && !isStandalone && !isCameraEditor)
+			if (generatedMusic && !endingSong && !isCameraOnForcedPos && !isStandalone)
 			{
 				moveCameraSection();
 			}
 
-			if (camZooming && FlxG.camera.zoom < (1.35 * smartCamZoomMult) && ClientPrefs.camZooms && !isStandalone && !isCameraEditor)
+			if (camZooming && FlxG.camera.zoom < (1.35 * smartCamZoomMult) && ClientPrefs.camZooms && !isStandalone
+				&& (cameraDirector == null || !cameraDirector.ownsZoom()))
 			{
 				FlxG.camera.zoom += 0.015 * camZoomingMult;
 				camHUD.zoom += 0.03 * camZoomingMult;
@@ -5813,26 +5767,31 @@ class PlayState extends MusicBeatState
 	var curLight:Int = -1;
 	var curLightEvent:Int = -1;
 
-	public static function getCameraPath(songName:String):String {
-		var formatted:String = Paths.formatToSongPath(songName);
+	public static function getCameraPath(songName:String):String
+	{
+		var key = 'data/' + Paths.formatToSongPath(songName) + '/camera.json';
 		#if MODS_ALLOWED
-		var modPath:String = Paths.mods('data/' + formatted + '/camera.json');
-		if (sys.FileSystem.exists(modPath)) return modPath;
+		var path = Paths.modFolders(key);
+		if (FileSystem.exists(path)) return path;
+		// Compatibility with camera files saved by the previous editor.
+		path = Paths.mods(key);
+		if (FileSystem.exists(path)) return path;
 		#end
-		return 'assets/data/' + formatted + '/camera.json';
+		var legacy = 'assets/' + key;
+		#if sys
+		if (FileSystem.exists(legacy)) return legacy;
+		#end
+		return Paths.getPreloadPath(key);
 	}
 
-	public static function getCameraSavePath(songName:String):String {
-		var formatted:String = Paths.formatToSongPath(songName);
+	public static function getCameraSavePath(songName:String):String
+	{
+		var key = 'data/' + Paths.formatToSongPath(songName) + '/camera.json';
 		#if MODS_ALLOWED
-		if (Paths.currentModDirectory != null && Paths.currentModDirectory.length > 0) {
-			var dir:String = Paths.mods(Paths.currentModDirectory + '/data/' + formatted);
-			if (sys.FileSystem.exists(dir)) {
-				return dir + '/camera.json';
-			}
-		}
+		if (Paths.currentModDirectory != null && Paths.currentModDirectory.length > 0)
+			return Paths.mods(Paths.currentModDirectory + '/' + key);
 		#end
-		return 'assets/data/' + formatted + '/camera.json';
+		return Paths.getPreloadPath(key);
 	}
 
 	public function getDefaultCameraPosition():FlxPoint
@@ -5844,6 +5803,7 @@ class PlayState extends MusicBeatState
 			section = SONG.notes[curSection];
 		}
 
+		if (section != null && section.gfSection && gf != null) return getCameraTargetPosition('gf', 0);
 		var mainCharacter:Character = dad;
 		if (section != null)
 		{
@@ -5941,26 +5901,7 @@ class PlayState extends MusicBeatState
 
 	public function isCameraStandalone():Bool
 	{
-		if (cameraEvents == null || cameraEvents.length == 0) return false;
-		
-		var stepFloat:Float = Conductor.songPosition / Conductor.stepCrochet;
-		
-		var activePosEvent:CameraEvent = null;
-		for (i in 0...cameraEvents.length) {
-			var ev = cameraEvents[i];
-			if (ev.step <= stepFloat) {
-				if (ev.target_type != "zoom") {
-					activePosEvent = ev;
-				}
-			} else {
-				break;
-			}
-		}
-		
-		if (activePosEvent != null) {
-			return activePosEvent.standalone;
-		}
-		return false;
+		return cameraDirector != null && cameraDirector.position != null && cameraDirector.position.standalone == true;
 	}
 
 	public function getGameplayCameraPosition():FlxPoint
@@ -5971,6 +5912,7 @@ class PlayState extends MusicBeatState
 			section = SONG.notes[curSection];
 		}
 
+		if (section != null && section.gfSection && gf != null) return getCameraTargetPosition('gf', 0);
 		var mainCharacter:Character = dad;
 		if (section != null)
 		{
@@ -6014,284 +5956,29 @@ class PlayState extends MusicBeatState
 
 	public function hasActiveCameraEvent():Bool
 	{
-		if (cameraEvents == null || cameraEvents.length == 0) return false;
-		
-		var stepFloat:Float = Conductor.songPosition / Conductor.stepCrochet;
-		if (stepFloat < cameraEvents[0].step) return false;
-
-		// 1. Check for active position event
-		var activePosEvent:CameraEvent = null;
-		for (i in 0...cameraEvents.length) {
-			var ev = cameraEvents[i];
-			if (ev.step <= stepFloat) {
-				if (ev.target_type != "zoom") {
-					activePosEvent = ev;
-				}
-			} else {
-				break;
-			}
-		}
-		var isPosActive:Bool = (activePosEvent != null);
-		if (activePosEvent != null && activePosEvent.target_type == "default") {
-			var durationInSteps:Float = activePosEvent.duration * 4;
-			if (stepFloat >= activePosEvent.step + durationInSteps) {
-				isPosActive = false; // Position reversion finished
-			}
-		}
-
-		// 2. Check for active zoom event
-		var activeZoomEvent:CameraEvent = null;
-		for (i in 0...cameraEvents.length) {
-			var ev = cameraEvents[i];
-			if (ev.step <= stepFloat) {
-				if ((ev.zoom != -1 && ev.zoom > 0) || ev.target_type == "default") {
-					activeZoomEvent = ev;
-				}
-			} else {
-				break;
-			}
-		}
-
-		var isZoomActive = false;
-		if (activeZoomEvent != null) {
-			if (activeZoomEvent.target_type != "default") {
-				isZoomActive = true; // Stay locked to the custom zoom indefinitely
-			} else {
-				if (activeZoomEvent.duration > 0) {
-					var endTime = activeZoomEvent.step + activeZoomEvent.duration;
-					if (stepFloat <= endTime) isZoomActive = true;
-				}
-			}
-		}
-
-		return (isPosActive || isZoomActive);
+		return cameraTimeline.length > 0 && Conductor.getStep(Conductor.songPosition) >= cameraTimeline[0].step;
 	}
 
 	public function updateCameraEvents(elapsed:Float):Void
 	{
-		if (cameraEvents == null || cameraEvents.length == 0) return;
-
-		var stepFloat:Float = Conductor.songPosition / Conductor.stepCrochet;
-		
-		// Find active position event and its previous position event
-		activePosEvent = null;
-		var activePosIndex:Int = -1;
-		
-		for (i in 0...cameraEvents.length) {
-			var ev = cameraEvents[i];
-			if (ev.step <= stepFloat) {
-				if (ev.target_type != "zoom") {
-					activePosEvent = ev;
-					activePosIndex = i;
-				}
-			} else {
-				break;
-			}
+		if (cameraTimeline.length == 0)
+		{
+			// Normal target following uses the same exponential as Default in the editor.
+			var alpha = 1 - Math.exp(-elapsed * 2.4 * cameraSpeed * playbackRate);
+			camFollowPos.setPosition(FlxMath.lerp(camFollowPos.x, camFollow.x, alpha), FlxMath.lerp(camFollowPos.y, camFollow.y, alpha));
+			return;
 		}
-		
-		var prevPosEvent:CameraEvent = null;
-		if (activePosIndex > 0) {
-			var idx = activePosIndex - 1;
-			while (idx >= 0) {
-				var ev = cameraEvents[idx];
-				if (ev.target_type != "zoom" && ev.step < activePosEvent.step) {
-					prevPosEvent = ev;
-					break;
-				}
-				idx--;
-			}
+		if (Conductor.songPosition < 0)
+		{
+			var alpha = 1 - Math.exp(-elapsed * 2.4 * cameraSpeed * playbackRate);
+			camFollowPos.setPosition(FlxMath.lerp(camFollowPos.x, camFollow.x, alpha), FlxMath.lerp(camFollowPos.y, camFollow.y, alpha));
+			return;
 		}
-
-		// Find active zoom event and its previous zoom event
-		activeZoomEvent = null;
-		var activeZoomIndex:Int = -1;
-		
-		for (i in 0...cameraEvents.length) {
-			var ev = cameraEvents[i];
-			if (ev.step <= stepFloat) {
-				if ((ev.zoom != -1 && ev.zoom > 0) || ev.target_type == "default") {
-					activeZoomEvent = ev;
-					activeZoomIndex = i;
-				}
-			} else {
-				break;
-			}
+		if (cameraDirector == null)
+		{
+			cameraDirector = new CameraDirector(this, cameraTimeline);
+			cameraDirector.seek(0);
 		}
-		
-		var prevZoomEvent:CameraEvent = null;
-		if (activeZoomIndex > 0) {
-			var idx = activeZoomIndex - 1;
-			while (idx >= 0) {
-				var ev = cameraEvents[idx];
-				if (((ev.zoom != -1 && ev.zoom > 0) || ev.target_type == "default") && ev.step < activeZoomEvent.step) {
-					prevZoomEvent = ev;
-					break;
-				}
-				idx--;
-			}
-		}
-
-		var stageFile = StageData.getStageFile(curStage);
-		var defaultZoomVal:Float = (stageFile != null) ? stageFile.defaultZoom : 0.9;
-
-		// ─── 1. Position evaluation ──────────────────────────────────────────
-		if (activePosEvent == null) {
-			var defaultPos:FlxPoint = getDefaultCameraPosition();
-			camFollow.x = defaultPos.x;
-			camFollow.y = defaultPos.y;
-		} else {
-			var finalX:Float = 0;
-			var finalY:Float = 0;
-
-			if (activePosEvent.target_type == "default") {
-				var gpPos = getGameplayCameraPosition();
-				finalX = gpPos.x;
-				finalY = gpPos.y;
-				gpPos.put();
-			} else if (activePosEvent.target_type == "midpoint") {
-				var dadMid = dad.getMidpoint();
-				var bfMid = boyfriend.getMidpoint();
-				finalX = (dadMid.x + bfMid.x) * 0.5 + activePosEvent.x;
-				finalY = (dadMid.y + bfMid.y) * 0.5 + activePosEvent.y;
-				dadMid.put();
-				bfMid.put();
-			} else {
-				var targetPos:FlxPoint = getCameraTargetPosition(activePosEvent.target_type, activePosEvent.target_id);
-				finalX = activePosEvent.is_relative ? (targetPos.x + activePosEvent.x) : activePosEvent.x;
-				finalY = activePosEvent.is_relative ? (targetPos.y + activePosEvent.y) : activePosEvent.y;
-			}
-
-			// Add sing offset if not locked and not in cutscene
-			if (activePosEvent != null && activePosEvent.target_type != "default" && activePosEvent.target_type != "zoom") {
-				if (!activePosEvent.lock_note_movement && ClientPrefs.camMove && !inCutscene) {
-					var mainCharacter:Character = null;
-					switch (activePosEvent.target_type) {
-						case "dad": mainCharacter = dad;
-						case "bf": mainCharacter = boyfriend;
-						case "gf": mainCharacter = gf;
-						case "extra_char":
-							if (extraChars != null && activePosEvent.target_id >= 0 && activePosEvent.target_id < extraChars.length) {
-								mainCharacter = extraChars[activePosEvent.target_id];
-							}
-						default:
-							// For global or midpoint, fall back to the section focus character
-							var section:Section.SwagSection = null;
-							if (SONG != null && SONG.notes != null && SONG.notes[curSection] != null) {
-								section = SONG.notes[curSection];
-							}
-							mainCharacter = dad;
-							if (section != null) {
-								var secDynamic:Dynamic = section;
-								var focusID:Int = (secDynamic.camFocus != null) ? secDynamic.camFocus : (section.mustHitSection ? 1 : 0);
-								if (section.gfSection)
-									mainCharacter = gf;
-								else if (focusID >= 0 && focusID < extraChars.length)
-									mainCharacter = extraChars[focusID];
-							}
-					}
-					if (mainCharacter != null && mainCharacter.animation.curAnim != null) {
-						var animName:String = mainCharacter.animation.curAnim.name;
-						var shift:Float = ClientPrefs.camMoveStrength;
-						if (animName.startsWith('singLEFT'))
-							finalX -= shift;
-						else if (animName.startsWith('singRIGHT'))
-							finalX += shift;
-						else if (animName.startsWith('singUP'))
-							finalY -= shift;
-						else if (animName.startsWith('singDOWN'))
-							finalY += shift;
-					}
-				}
-			}
-
-			// Handle position interpolation
-			var durationInSteps:Float = activePosEvent.duration * 4;
-			if (durationInSteps > 0 && stepFloat < activePosEvent.step + durationInSteps) {
-				var startX:Float = 0;
-				var startY:Float = 0;
-
-				if (prevPosEvent != null) {
-					if (prevPosEvent.target_type == "default") {
-						var gpPos = getGameplayCameraPosition();
-						startX = gpPos.x;
-						startY = gpPos.y;
-						gpPos.put();
-					} else if (prevPosEvent.target_type == "midpoint") {
-						var dadMid = dad.getMidpoint();
-						var bfMid = boyfriend.getMidpoint();
-						startX = (dadMid.x + bfMid.x) * 0.5 + prevPosEvent.x;
-						startY = (dadMid.y + bfMid.y) * 0.5 + prevPosEvent.y;
-						dadMid.put();
-						bfMid.put();
-					} else {
-						var prevTarget:FlxPoint = getCameraTargetPosition(prevPosEvent.target_type, prevPosEvent.target_id);
-						startX = prevPosEvent.is_relative ? (prevTarget.x + prevPosEvent.x) : prevPosEvent.x;
-						startY = prevPosEvent.is_relative ? (prevTarget.y + prevPosEvent.y) : prevPosEvent.y;
-					}
-				} else {
-					var defaultPos:FlxPoint = getDefaultCameraPosition();
-					startX = defaultPos.x;
-					startY = defaultPos.y;
-				}
-
-				var t:Float = (stepFloat - activePosEvent.step) / durationInSteps;
-				if (t < 0) t = 0;
-				if (t > 1) t = 1;
-
-				var easeProgress:Float = 1.0;
-				if (activePosEvent.ease == "instant") {
-					easeProgress = 1.0;
-				} else {
-					var easeFunc = null;
-					if (activePosEvent.ease != null && activePosEvent.ease.length > 0) {
-						easeFunc = Reflect.field(flixel.tweens.FlxEase, activePosEvent.ease);
-					}
-					easeProgress = (easeFunc != null) ? easeFunc(t) : t;
-				}
-
-				camFollow.x = startX + (finalX - startX) * easeProgress;
-				camFollow.y = startY + (finalY - startY) * easeProgress;
-			} else {
-				camFollow.x = finalX;
-				camFollow.y = finalY;
-			}
-		}
-
-		// ─── 2. Zoom evaluation ──────────────────────────────────────────────
-		if (activeZoomEvent == null) {
-			defaultCamZoom = defaultZoomVal;
-		} else {
-			var finalZoom:Float = (activeZoomEvent.target_type == "default") ? defaultZoomVal : activeZoomEvent.zoom;
-			if (finalZoom <= 0) finalZoom = defaultZoomVal;
-
-			var durationInSteps:Float = activeZoomEvent.duration * 4;
-			if (durationInSteps > 0 && stepFloat < activeZoomEvent.step + durationInSteps) {
-				var startZoom:Float = defaultZoomVal;
-
-				if (prevZoomEvent != null) {
-					startZoom = (prevZoomEvent.target_type == "default") ? defaultZoomVal : prevZoomEvent.zoom;
-					if (startZoom <= 0) startZoom = defaultZoomVal;
-				}
-
-				var t:Float = (stepFloat - activeZoomEvent.step) / durationInSteps;
-				if (t < 0) t = 0;
-				if (t > 1) t = 1;
-
-				var easeProgress:Float = 1.0;
-				if (activeZoomEvent.ease == "instant") {
-					easeProgress = 1.0;
-				} else {
-					var easeFunc = null;
-					if (activeZoomEvent.ease != null && activeZoomEvent.ease.length > 0) {
-						easeFunc = Reflect.field(flixel.tweens.FlxEase, activeZoomEvent.ease);
-					}
-					easeProgress = (easeFunc != null) ? easeFunc(t) : t;
-				}
-
-				defaultCamZoom = startZoom + (finalZoom - startZoom) * easeProgress;
-			} else {
-				defaultCamZoom = finalZoom;
-			}
-		}
+		cameraDirector.update(Conductor.songPosition);
 	}
 }

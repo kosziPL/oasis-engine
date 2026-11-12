@@ -409,7 +409,8 @@ class ChartingState extends MusicBeatState
 				speed: 1,
 				stage: 'stage',
 				validScore: false,
-				authors: ''
+				authors: '',
+				featuredArtists: null
 			};
 			addSection();
 			PlayState.SONG = _song;
@@ -703,6 +704,7 @@ class ChartingState extends MusicBeatState
 	var playSoundDad:FlxUICheckBox = null;
 	var UI_songTitle:FlxUIInputText;
 	var UI_composersInputText:FlxUIInputText;
+	var UI_featuredArtistsInputText:FlxUIInputText;
 	var deadCharacterDropDown:FlxUIDropDownMenuCustom;
 	var deadCharacterList:Array<String> = [];
 	var noteSkinInputText:FlxUIInputText;
@@ -1097,6 +1099,10 @@ class ChartingState extends MusicBeatState
 		UI_composersInputText = new FlxUIInputText(10, 80, 150, authorsStr, 8);
 		blockPressWhileTypingOn.push(UI_composersInputText);
 
+		var featuredArtistsStr = _song.featuredArtists != null ? _song.featuredArtists.join(', ') : '';
+		UI_featuredArtistsInputText = new FlxUIInputText(10, 120, 300, featuredArtistsStr, 8);
+		blockPressWhileTypingOn.push(UI_featuredArtistsInputText);
+
 		var deadCharStr = _song.gameOverChar;
 		if (deadCharStr == null || deadCharStr == '')
 			deadCharStr = 'bf-dead';
@@ -1105,7 +1111,7 @@ class ChartingState extends MusicBeatState
 		if (deadCharIndex < 0)
 			deadCharIndex = 0;
 
-		deadCharacterDropDown = new FlxUIDropDownMenuCustom(10, 120, FlxUIDropDownMenuCustom.makeStrIdLabelArray(deadCharacterList, true),
+		deadCharacterDropDown = new FlxUIDropDownMenuCustom(10, 160, FlxUIDropDownMenuCustom.makeStrIdLabelArray(deadCharacterList, true),
 			function(character:String)
 			{
 				_song.gameOverChar = deadCharacterList[Std.parseInt(character)];
@@ -1116,6 +1122,8 @@ class ChartingState extends MusicBeatState
 		tab_group_metadata.add(check_cameraEditor);
 		tab_group_metadata.add(new FlxText(UI_composersInputText.x, UI_composersInputText.y - 15, 0, 'Composers (Authors):'));
 		tab_group_metadata.add(UI_composersInputText);
+		tab_group_metadata.add(new FlxText(UI_featuredArtistsInputText.x, UI_featuredArtistsInputText.y - 15, 0, 'Featured Artists (comma-separated, optional):'));
+		tab_group_metadata.add(UI_featuredArtistsInputText);
 		tab_group_metadata.add(new FlxText(deadCharacterDropDown.x, deadCharacterDropDown.y - 15, 0, 'Game Over Character:'));
 		tab_group_metadata.add(deadCharacterDropDown);
 
@@ -2439,6 +2447,7 @@ class ChartingState extends MusicBeatState
 		Conductor.songPosition = FlxG.sound.music.time;
 		_song.song = UI_songTitle.text;
 		_song.authors = UI_composersInputText.text;
+		syncFeaturedArtists();
 
 		strumLineUpdateY();
 		var sec = _song.notes[curSec];
@@ -5030,8 +5039,15 @@ class ChartingState extends MusicBeatState
 		MusicBeatState.resetState();
 	}
 
+	function syncFeaturedArtists():Void
+	{
+		if (UI_featuredArtistsInputText != null)
+			_song.featuredArtists = Song.parseFeaturedArtists(UI_featuredArtistsInputText.text);
+	}
+
 	function autosaveSong():Void
 	{
+		syncFeaturedArtists();
 		FlxG.save.data.autosave = Json.stringify({
 			"song": _song
 		});
@@ -5046,6 +5062,7 @@ class ChartingState extends MusicBeatState
 
 	private function saveLevel()
 	{
+		syncFeaturedArtists();
 		if (_song.events != null && _song.events.length > 1)
 			_song.events.sort(sortByTime);
 		var json = {

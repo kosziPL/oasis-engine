@@ -624,6 +624,8 @@ class CharacterEditorState extends MusicBeatState
 	var animationIndicesInputText:FlxUIInputText;
 	var animationNameFramerate:FlxUINumericStepper;
 	var animationLoopCheckBox:FlxUICheckBox;
+	var sustainIntervalCheckBox:FlxUICheckBox;
+	var sustainIntervalStepper:FlxUINumericStepper;
 	function addAnimationsUI() {
 		var tab_group = new FlxUI(null, UI_box);
 		tab_group.name = "Animations";
@@ -633,6 +635,8 @@ class CharacterEditorState extends MusicBeatState
 		animationIndicesInputText = new FlxUIInputText(animationNameInputText.x, animationNameInputText.y + 40, 250, '', 8);
 		animationNameFramerate = new FlxUINumericStepper(animationInputText.x + 170, animationInputText.y, 1, 24, 0, 240, 0);
 		animationLoopCheckBox = new FlxUICheckBox(animationNameInputText.x + 170, animationNameInputText.y - 1, null, null, "Should it Loop?", 100);
+		sustainIntervalCheckBox = new FlxUICheckBox(15, 225, null, null, "Sustain pulse", 150);
+		sustainIntervalStepper = new FlxUINumericStepper(200, 225, 0.01, 0, -0.09, 10, 3);
 
 		animationDropDown = new FlxUIDropDownMenuCustom(15, animationInputText.y - 55, FlxUIDropDownMenuCustom.makeStrIdLabelArray([''], true), function(pressed:String) {
 			var selectedAnimation:Int = Std.parseInt(pressed);
@@ -641,6 +645,8 @@ class CharacterEditorState extends MusicBeatState
 			animationNameInputText.text = anim.name;
 			animationLoopCheckBox.checked = anim.loop;
 			animationNameFramerate.value = anim.fps;
+			sustainIntervalCheckBox.checked = anim.sustain_interval_enabled == true;
+			sustainIntervalStepper.value = anim.sustain_interval != null ? anim.sustain_interval : 0;
 
 			var indicesStr:String = anim.indices.toString();
 			animationIndicesInputText.text = indicesStr.substr(1, indicesStr.length - 2);
@@ -690,6 +696,8 @@ class CharacterEditorState extends MusicBeatState
 				name: animationNameInputText.text,
 				fps: Math.round(animationNameFramerate.value),
 				loop: animationLoopCheckBox.checked,
+				sustain_interval_enabled: sustainIntervalCheckBox.checked,
+				sustain_interval: sustainIntervalStepper.value,
 				indices: indices,
 				offsets: lastOffsets
 			};
@@ -769,6 +777,9 @@ class CharacterEditorState extends MusicBeatState
 		tab_group.add(animationIndicesInputText);
 		tab_group.add(animationNameFramerate);
 		tab_group.add(animationLoopCheckBox);
+		tab_group.add(sustainIntervalCheckBox);
+		tab_group.add(new FlxText(sustainIntervalStepper.x, sustainIntervalStepper.y - 15, 0, 'Pulse offset (seconds):'));
+		tab_group.add(sustainIntervalStepper);
 		tab_group.add(addUpdateButton);
 		tab_group.add(removeButton);
 		tab_group.add(ghostDropDown);

@@ -38,6 +38,74 @@ class Alphabet extends FlxSpriteGroup
 
 	public var distancePerItem:FlxPoint = new FlxPoint(20, 120);
 	public var startPosition:FlxPoint = new FlxPoint(0, 0); //for the calculations
+	public var marqueeSpeed:Float = 70;
+	public var marqueePause:Float = 1;
+	public var marqueeFade:Float = 24;
+	public var marqueeIntroDuration:Float = 0.3;
+	var marqueeIntro:Float = 0;
+	var marqueeEnabled:Bool = false;
+	var marqueeLeft:Float = 0;
+	var marqueeRight:Float = 0;
+	var marqueeDistance:Float = 0;
+	var marqueeTime:Float = 0;
+	var marqueeOffset:Float = 0;
+	var marqueeShaders:Map<AlphaCharacter, AlphabetMarqueeShader> = new Map();
+
+	public function startMarquee(left:Float, right:Float, textWidth:Float):Void
+	{
+		stopMarquee();
+		marqueeLeft = left;
+		marqueeRight = Math.max(left + 1, right);
+		marqueeDistance = Math.max(0, textWidth - (marqueeRight - left) + marqueeFade * 2);
+		marqueeEnabled = textWidth > marqueeRight - left;
+	}
+
+	public function stopMarquee():Void
+	{
+		marqueeEnabled = false;
+		marqueeTime = 0;
+		marqueeIntro = 0;
+		marqueeOffset = 0;
+		marqueeShaders.clear();
+	}
+
+	override public function draw():Void
+	{
+		if (!marqueeEnabled)
+		{
+			super.draw();
+			return;
+		}
+		// Move only the rendered glyphs; layout and return tweens keep their original coordinates.
+		var blend = marqueeIntro * marqueeIntro * (3 - 2 * marqueeIntro);
+		var shift = marqueeFade * blend - marqueeOffset;
+		var previousShaders:Array<flixel.system.FlxAssets.FlxShader> = [];
+		for (letter in letters)
+		{
+			previousShaders.push(letter.shader);
+			letter.x += shift;
+			var effect = marqueeShaders.get(letter);
+			if (effect == null)
+			{
+				effect = new AlphabetMarqueeShader();
+				marqueeShaders.set(letter, effect);
+			}
+			var frame = letter.frame;
+			effect.glyphUV.value = [frame.uv.x, frame.uv.width - frame.uv.x];
+			effect.glyphPosition.value = [letter.x - letter.offset.x + letter.origin.x
+				+ (frame.offset.x - letter.origin.x) * letter.scale.x, frame.frame.width * letter.scale.x];
+			effect.viewport.value = [marqueeLeft, marqueeRight];
+			effect.fadeWidth.value = [Math.max(1, Math.min(marqueeFade, (marqueeRight - marqueeLeft) / 2))];
+			effect.maskStrength.value = [blend];
+			letter.shader = effect;
+		}
+		super.draw();
+		for (i in 0...letters.length)
+		{
+			letters[i].x -= shift;
+			letters[i].shader = previousShaders[i];
+		}
+	}
 
 	public function new(x:Float, y:Float, text:String = "", ?bold:Bool = true)
 	{
@@ -102,6 +170,7 @@ class Alphabet extends FlxSpriteGroup
 
 	public function clearLetters()
 	{
+		stopMarquee();
 		var i:Int = letters.length;
 		while (i > 0)
 		{
@@ -167,6 +236,25 @@ class Alphabet extends FlxSpriteGroup
 				y = FlxMath.lerp(y, (targetY * 1.3 * distancePerItem.y) + startPosition.y, lerpVal);
 		}
 		super.update(elapsed);
+		if (marqueeEnabled && marqueeSpeed > 0)
+		{
+			if (marqueeIntro < 1)
+			{
+				marqueeIntro = marqueeIntroDuration > 0 ? Math.min(1, marqueeIntro + elapsed / marqueeIntroDuration) : 1;
+				return;
+			}
+			marqueeTime += elapsed;
+			var travelTime = marqueeDistance / marqueeSpeed;
+			var phase = marqueeTime % (2 * (travelTime + marqueePause));
+			if (phase < marqueePause)
+				marqueeOffset = 0;
+			else if (phase < marqueePause + travelTime)
+				marqueeOffset = marqueeDistance * flixel.tweens.FlxEase.sineInOut((phase - marqueePause) / travelTime);
+			else if (phase < 2 * marqueePause + travelTime)
+				marqueeOffset = marqueeDistance;
+			else
+				marqueeOffset = marqueeDistance * (1 - flixel.tweens.FlxEase.sineInOut((phase - 2 * marqueePause - travelTime) / travelTime));
+		}
 	}
 
 	public function snapToPosition()

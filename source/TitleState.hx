@@ -228,7 +228,8 @@ class TitleState extends MusicBeatState
 
 			if (!hasPack)
 			{
-				DiscordClient.clientID = "863222024192262205"; // Default FNF Psych Engine Client ID
+				// Ahhh Antigravity :sob:
+				// DiscordClient.clientID = "863222024192262205"; // Default FNF Psych Engine Client ID
 				DiscordClient.in_dev = false;
 				lime.app.Application.current.window.title = "Friday Night Funkin': Oasis Engine";
 			}

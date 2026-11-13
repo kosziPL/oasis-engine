@@ -2,10 +2,10 @@ name: Build & Release
 
 on:
   push:
-    branches: [ main, engine, experimental, master ]
+    branches: [ engine_main, main, engine, experimental, master ]
     tags: [ "v*", "*" ]
   pull_request:
-    branches: [ main, engine, experimental, master ]
+    branches: [ engine_main, main, engine, experimental, master ]
   workflow_dispatch:
 
 concurrency:

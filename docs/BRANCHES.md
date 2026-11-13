@@ -62,3 +62,31 @@ stability on every platform.
 Maintainers validate each candidate with the [release checklist](RELEASE_CHECKLIST.md).
 Release notes identify the tag, tested platforms, changes, known issues, and any
 migration steps for existing mods.
+
+## Separate engine and mod repositories
+
+Engine development takes place directly on `engine_main` in `kosziPL/oasis-engine`.
+There is no projection or synchronization from the private mod repository.
+The old `sync_engine.py` tooling has been retired.
+
+The private `kosziPL/fnf-jkbandkoszioasis` repository contains only the Oasis mod,
+with `pack.json`, `characters`, `data`, `images`, `songs`, and other mod content
+at its root. It has its own `main` branch and independent history.
+
+```sh
+# From the engine root, with access to the private mod repository:
+git clone git@github.com:kosziPL/fnf-jkbandkoszioasis.git assets/custom/oasis
+
+# Engine changes:
+git -C . status
+
+# Mod changes:
+git -C assets/custom/oasis status
+```
+
+`/assets/custom/oasis/` is ignored by the engine. It is an ordinary nested clone,
+not a submodule; cloning the engine alone does not download the private mod.
+Keep the two repositories' commits and pushes separate. Use the engine's Mods
+menu or local mod activation settings to enable installed content.
+Previous combined-project history is preserved in the maintainer's local mirror
+and bundle archive, not in the new mod repository.

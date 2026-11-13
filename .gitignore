@@ -40,3 +40,9 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Mods are independent repositories. Never commit the Oasis mod here.
+/assets/custom/oasis/
+
+# Local JetBrains project configuration
+/.idea/

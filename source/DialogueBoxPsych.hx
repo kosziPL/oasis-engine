@@ -84,7 +84,7 @@ class DialogueCharacter extends FlxSprite
 		this.curCharacter = character;
 
 		reloadCharacterJson(character);
-		frames = Paths.getSparrowAtlas('dialogue/' + jsonFile.image);
+		frames = Path.getSparrowAtlas('dialogue/' + jsonFile.image);
 		reloadAnimations();
 
 		antialiasing = ClientPrefs.globalAntialiasing;
@@ -96,18 +96,18 @@ class DialogueCharacter extends FlxSprite
 		var rawJson = null;
 
 		#if MODS_ALLOWED
-		var path:String = Paths.modFolders(characterPath);
+		var path:String = Path.modFolders(characterPath);
 		if (!FileSystem.exists(path)) {
-			path = Paths.getPreloadPath(characterPath);
+			path = Path.getPreloadPath(characterPath);
 		}
 
 		if(!FileSystem.exists(path)) {
-			path = Paths.getPreloadPath('images/dialogue/' + DEFAULT_CHARACTER + '.json');
+			path = Path.getPreloadPath('images/dialogue/' + DEFAULT_CHARACTER + '.json');
 		}
 		rawJson = File.getContent(path);
 
 		#else
-		var path:String = Paths.getPreloadPath(characterPath);
+		var path:String = Path.getPreloadPath(characterPath);
 		rawJson = Assets.getText(path);
 		#end
 		
@@ -194,7 +194,7 @@ class DialogueBoxPsych extends FlxSpriteGroup
 		super();
 
 		if(song != null && song != '') {
-			var bgm = Paths.music(song);
+			var bgm = Path.music(song);
 			if(bgm != null) {
 				FlxG.sound.playMusic(bgm, 1);
 				FlxG.sound.music.fadeIn(2, 0, 1);
@@ -213,7 +213,7 @@ class DialogueBoxPsych extends FlxSpriteGroup
 		spawnCharacters();
 
 		box = new FlxSprite(70, 370);
-		box.frames = Paths.getSparrowAtlas('speech_bubble');
+		box.frames = Path.getSparrowAtlas('speech_bubble');
 		box.scrollFactor.set();
 		box.antialiasing = ClientPrefs.globalAntialiasing;
 		box.animation.addByPrefix('normal', 'speech bubble normal', 24);
@@ -343,7 +343,7 @@ class DialogueBoxPsych extends FlxSpriteGroup
 				} else {
 					startNextDialog();
 				}
-				var closeSnd = Paths.sound(closeSound);
+				var closeSnd = Path.sound(closeSound);
 				if (closeSnd != null) FlxG.sound.play(closeSnd, closeVolume);
 			} else if(daText.finishedText) {
 				var char:DialogueCharacter = arrayCharacters[lastCharacter];
@@ -466,7 +466,7 @@ class DialogueBoxPsych extends FlxSpriteGroup
 	    } while(curDialogue == null);
 
 	    if(curDialogue.sound != null && curDialogue.sound != '') {
-				var customSnd = Paths.sound(curDialogue.sound);
+				var customSnd = Path.sound(curDialogue.sound);
 				if (customSnd != null) FlxG.sound.play(customSnd);
 			}
 

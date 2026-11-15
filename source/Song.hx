@@ -139,13 +139,13 @@ class Song
 
 	public static function loadFromJson(jsonInput:String, ?folder:String):SwagSong
 	{
-		var formattedFolder:String = Paths.formatToSongPath(folder);
-		var formattedSong:String = Paths.formatToSongPath(jsonInput);
+		var formattedFolder:String = Path.formatToSongPath(folder);
+		var formattedSong:String = Path.formatToSongPath(jsonInput);
 		
-		var path = Paths.json(formattedFolder + '/' + formattedSong);
+		var path = Path.json(formattedFolder + '/' + formattedSong);
 		
 		#if MODS_ALLOWED
-		var moddyFile:String = Paths.modsJson(formattedFolder + '/' + formattedSong);
+		var moddyFile:String = Path.modsJson(formattedFolder + '/' + formattedSong);
 		if(sys.FileSystem.exists(moddyFile)) {
 			path = moddyFile;
 		}

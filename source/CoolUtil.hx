@@ -46,12 +46,12 @@ class CoolUtil
 		{
 			fileSuffix = '';
 		}
-		return Paths.formatToSongPath(fileSuffix);
+		return Path.formatToSongPath(fileSuffix);
 	}
 
 	public static function getAvailableDifficulties(songName:String):Array<String>
 	{
-		var formattedSong:String = Paths.formatToSongPath(songName);
+		var formattedSong:String = Path.formatToSongPath(songName);
 		var foundDifficulties:Array<String> = [];
 		var diffSet:Map<String, Bool> = new Map();
 		
@@ -61,14 +61,14 @@ class CoolUtil
 			'assets/fnf/data/$formattedSong/'
 		];
 		
-		var modsToCheck = Paths.getGlobalMods().copy();
+		var modsToCheck = Path.getGlobalMods().copy();
 		
 		for(mod in modsToCheck) {
 			directories.push('assets/custom/$mod/data/$formattedSong/');
 		}
 		
-		if (Paths.currentModDirectory != null && Paths.currentModDirectory.length > 0) {
-			var d = 'assets/custom/${Paths.currentModDirectory}/data/$formattedSong/';
+		if (Path.currentModDirectory != null && Path.currentModDirectory.length > 0) {
+			var d = 'assets/custom/${Path.currentModDirectory}/data/$formattedSong/';
 			if (!directories.contains(d)) directories.insert(0, d);
 		}
 		
@@ -192,11 +192,11 @@ class CoolUtil
 
 	//uhhhh does this even work at all? i'm starting to doubt
 	public static function precacheSound(sound:String, ?library:String = null):Void {
-		Paths.sound(sound, library);
+		Path.sound(sound, library);
 	}
 
 	public static function precacheMusic(sound:String, ?library:String = null):Void {
-		Paths.music(sound, library);
+		Path.music(sound, library);
 	}
 
 	public static function browserLoad(site:String) {

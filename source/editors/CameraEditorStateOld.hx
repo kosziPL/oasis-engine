@@ -241,7 +241,7 @@ class CameraEditorStateOld extends PlayState
 
 		// ── Info panel (top-left, inside BG) ──────────────────────────────
 		infoText = new FlxText(20, 80, 220, "", 13);
-		infoText.setFormat(Paths.font("vcr.ttf"), 13, FlxColor.WHITE, LEFT,
+		infoText.setFormat(Path.font("vcr.ttf"), 13, FlxColor.WHITE, LEFT,
 			FlxTextBorderStyle.OUTLINE, 0xFF000000);
 		infoText.scrollFactor.set(0, 0);
 		infoText.cameras = [camEditor];
@@ -249,7 +249,7 @@ class CameraEditorStateOld extends PlayState
 
 		// ── Playback / time panel (below info, inside BG) ─────────────────
 		playbackText = new FlxText(20, 280, 220, "", 13);
-		playbackText.setFormat(Paths.font("vcr.ttf"), 13, FlxColor.WHITE, LEFT,
+		playbackText.setFormat(Path.font("vcr.ttf"), 13, FlxColor.WHITE, LEFT,
 			FlxTextBorderStyle.OUTLINE, 0xFF000000);
 		playbackText.scrollFactor.set(0, 0);
 		playbackText.cameras = [camEditor];
@@ -318,13 +318,13 @@ class CameraEditorStateOld extends PlayState
 
 		// ── Viewfinder HUD overlays ───────────────────────────────────────
 		recStatusText = new FlxText(FlxG.width - 250, 16, 230, "STBY", 16);
-		recStatusText.setFormat(Paths.font("vcr.ttf"), 16, 0xFFFFB300, RIGHT, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
+		recStatusText.setFormat(Path.font("vcr.ttf"), 16, 0xFFFFB300, RIGHT, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 		recStatusText.scrollFactor.set(0, 0);
 		recStatusText.cameras = [camEditor];
 		add(recStatusText);
 
 		hudTimecodeText = new FlxText(0, 15, FlxG.width, "00:00:00:00", 20);
-		hudTimecodeText.setFormat(Paths.font("vcr.ttf"), 20, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
+		hudTimecodeText.setFormat(Path.font("vcr.ttf"), 20, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 		hudTimecodeText.scrollFactor.set(0, 0);
 		hudTimecodeText.cameras = [camEditor];
 		add(hudTimecodeText);
@@ -396,7 +396,7 @@ class CameraEditorStateOld extends PlayState
 			"[Scroll Wheel over Timeline] - Zoom timeline view bounds in / out (1x - 50x)\n\n" +
 			"Note: Timeline scrolling freezes automatically while dragging pins or scrubbing.\n" +
 			"Click anywhere or press H / ESCAPE to close this panel.", 16);
-		helpTxt.setFormat(Paths.font("vcr.ttf"), 16, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
+		helpTxt.setFormat(Path.font("vcr.ttf"), 16, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 		helpTxt.screenCenter();
 		helpPanel.add(helpTxt);
 		helpPanel.scrollFactor.set(0, 0);
@@ -502,7 +502,7 @@ class CameraEditorStateOld extends PlayState
 
 		// Step info label (cyan)
 		stepLabel = new FlxText(10, 6, 310, "Step: - (no event)", 12);
-		stepLabel.setFormat(Paths.font("vcr.ttf"), 12, FlxColor.CYAN);
+		stepLabel.setFormat(Path.font("vcr.ttf"), 12, FlxColor.CYAN);
 		tab.add(stepLabel);
 
 		// Sub-event navigation widgets
@@ -814,7 +814,7 @@ class CameraEditorStateOld extends PlayState
 
 		recreatePins();
 		refreshInspector();
-		FlxG.sound.play(Paths.sound('scrollMenu'));
+		FlxG.sound.play(Path.sound('scrollMenu'));
 	}
 
 	function onRemoveSubEvent():Void
@@ -839,7 +839,7 @@ class CameraEditorStateOld extends PlayState
 
 		recreatePins();
 		refreshInspector();
-		FlxG.sound.play(Paths.sound('scrollMenu'));
+		FlxG.sound.play(Path.sound('scrollMenu'));
 	}
 
 	function onEditSelected():Void
@@ -865,7 +865,7 @@ class CameraEditorStateOld extends PlayState
 
 			recreatePins();
 			refreshInspector();
-			FlxG.sound.play(Paths.sound('confirmMenu'));
+			FlxG.sound.play(Path.sound('confirmMenu'));
 		}
 	}
 
@@ -1796,7 +1796,7 @@ class CameraEditorStateOld extends PlayState
 		isManualPanning = false; // lock preview to these captured parameters
 		_splineDirty = true;
 		
-		FlxG.sound.play(Paths.sound('scrollMenu'));
+		FlxG.sound.play(Path.sound('scrollMenu'));
 	}
 
 	// ─── Add / Update event in sorted list ────────────────────────────────────
@@ -2022,12 +2022,12 @@ class CameraEditorStateOld extends PlayState
 
 			// Flash confirmation
 			var flash = new FlxText(TL_X, TL_Y - 70, TL_W, "CONFIG SAVED!", 18);
-			flash.setFormat(Paths.font("vcr.ttf"), 18, FlxColor.GREEN, CENTER,
+			flash.setFormat(Path.font("vcr.ttf"), 18, FlxColor.GREEN, CENTER,
 				FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 			flash.scrollFactor.set(0, 0);
 			flash.cameras = [camEditor];
 			add(flash);
-			FlxG.sound.play(Paths.sound('confirmMenu'));
+			FlxG.sound.play(Path.sound('confirmMenu'));
 			flixel.tweens.FlxTween.tween(flash, {alpha: 0}, 2.0,
 				{onComplete: function(_) flash.destroy()});
 		}
@@ -2048,6 +2048,6 @@ class CameraEditorStateOld extends PlayState
 		#end
 		FlxG.mouse.visible = false;
 		MusicBeatState.switchState(new editors.MasterEditorMenu());
-		FlxG.sound.playMusic(Paths.music('freakyMenu'));
+		FlxG.sound.playMusic(Path.music('freakyMenu'));
 	}
 }

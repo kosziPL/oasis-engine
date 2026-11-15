@@ -134,7 +134,7 @@ class VanillaWeekHandler {
                     game.add(streetBehind);
                 }
                 phillyTrain = new BGSprite('philly/train', 2000, 360); game.add(phillyTrain);
-                trainSound = new FlxSound().loadEmbedded(Paths.sound('train_passes')); FlxG.sound.list.add(trainSound);
+                trainSound = new FlxSound().loadEmbedded(Path.sound('train_passes')); FlxG.sound.list.add(trainSound);
                 phillyStreet = new BGSprite('philly/street', -40, 50); game.add(phillyStreet);
 
             case 'limo':
@@ -190,7 +190,7 @@ class VanillaWeekHandler {
                     fgTrees.setGraphicSize(Std.int(widShit * 0.8)); fgTrees.updateHitbox(); game.add(fgTrees); fgTrees.antialiasing = false;
                 }
                 var bgTrees:FlxSprite = new FlxSprite(repositionShit - 380, -800);
-                bgTrees.frames = Paths.getPackerAtlas('weeb/weebTrees');
+                bgTrees.frames = Path.getPackerAtlas('weeb/weebTrees');
                 bgTrees.animation.add('treeLoop', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18], 12);
                 bgTrees.animation.play('treeLoop'); bgTrees.scrollFactor.set(0.85, 0.85); game.add(bgTrees); bgTrees.antialiasing = false;
                 if (!ClientPrefs.lowQuality) {
@@ -300,7 +300,7 @@ class VanillaWeekHandler {
 	public function fastCarDrive()
 	{
 		// trace('Car drive');
-		FlxG.sound.play(Paths.soundRandom('carPass', 0, 1), 0.7);
+		FlxG.sound.play(Path.soundRandom('carPass', 0, 1), 0.7);
 
 		fastCar.velocity.x = (FlxG.random.int(170, 220) / FlxG.elapsed) * 3;
 		fastCarCanDrive = false;
@@ -369,7 +369,7 @@ class VanillaWeekHandler {
 
 	public function lightningStrikeShit():Void
 	{
-		FlxG.sound.play(Paths.soundRandom('thunder_', 1, 2));
+		FlxG.sound.play(Path.soundRandom('thunder_', 1, 2));
 		if (!ClientPrefs.lowQuality)
 			halloweenBG.animation.play('halloweem bg lightning strike');
 
@@ -477,7 +477,7 @@ class VanillaWeekHandler {
 		red.scrollFactor.set();
 
 		var senpaiEvil:FlxSprite = new FlxSprite();
-		senpaiEvil.frames = Paths.getSparrowAtlas('weeb/senpaiCrazy');
+		senpaiEvil.frames = Path.getSparrowAtlas('weeb/senpaiCrazy');
 		senpaiEvil.animation.addByPrefix('idle', 'Senpai Pre Explosion', 24, false);
 		senpaiEvil.setGraphicSize(Std.int(senpaiEvil.width * 6));
 		senpaiEvil.scrollFactor.set();
@@ -485,7 +485,7 @@ class VanillaWeekHandler {
 		senpaiEvil.screenCenter();
 		senpaiEvil.x += 300;
 
-		var songName:String = Paths.formatToSongPath(PlayState.SONG.song);
+		var songName:String = Path.formatToSongPath(PlayState.SONG.song);
 		if (songName == 'roses' || songName == 'thorns')
 		{
 			game.remove(black);
@@ -509,7 +509,7 @@ class VanillaWeekHandler {
 			{
 				if (dialogueBox != null)
 				{
-					if (Paths.formatToSongPath(PlayState.SONG.song) == 'thorns')
+					if (Path.formatToSongPath(PlayState.SONG.song) == 'thorns')
 					{
 						game.add(senpaiEvil);
 						senpaiEvil.alpha = 0;
@@ -523,7 +523,7 @@ class VanillaWeekHandler {
 							else
 							{
 								senpaiEvil.animation.play('idle');
-								FlxG.sound.play(Paths.sound('Senpai_Dies'), 1, false, null, true, function()
+								FlxG.sound.play(Path.sound('Senpai_Dies'), 1, false, null, true, function()
 								{
 									game.remove(senpaiEvil);
 									game.remove(red);
@@ -557,13 +557,13 @@ class VanillaWeekHandler {
 	{
 		var cutsceneHandler:CutsceneHandler = new CutsceneHandler();
 
-		var songName:String = Paths.formatToSongPath(PlayState.SONG.song);
+		var songName:String = Path.formatToSongPath(PlayState.SONG.song);
 		game.dadGroup.alpha = 0.00001;
 		game.camHUD.visible = false;
 		// game.inCutscene = true; //this would stop the camera movement, oops
 
 		var tankman:FlxSprite = new FlxSprite(-20, 320);
-		tankman.frames = Paths.getSparrowAtlas('cutscenes/' + songName);
+		tankman.frames = Path.getSparrowAtlas('cutscenes/' + songName);
 		if (tankman.frames == null)
 		{
 			game.startCountdown();
@@ -615,7 +615,7 @@ class VanillaWeekHandler {
 				game.precacheList.set('killYou', 'sound');
 				game.precacheList.set('bfBeep', 'sound');
 
-				var wellWellWell:FlxSound = new FlxSound().loadEmbedded(Paths.sound('wellWellWell'));
+				var wellWellWell:FlxSound = new FlxSound().loadEmbedded(Path.sound('wellWellWell'));
 				FlxG.sound.list.add(wellWellWell);
 
 				tankman.animation.addByPrefix('wellWell', 'TANK TALK 1 P1', 24, false);
@@ -641,7 +641,7 @@ class VanillaWeekHandler {
 				{
 					game.boyfriend.playAnim('singUP', true);
 					game.boyfriend.specialAnim = true;
-					FlxG.sound.play(Paths.sound('bfBeep'));
+					FlxG.sound.play(Path.sound('bfBeep'));
 				});
 
 				// Move camera to Tankman
@@ -652,7 +652,7 @@ class VanillaWeekHandler {
 
 					// We should just kill you but... what the hell, it's been a boring day... let's see what you've got!
 					tankman.animation.play('killYou', true);
-					FlxG.sound.play(Paths.sound('killYou'));
+					FlxG.sound.play(Path.sound('killYou'));
 				});
 
 			case 'guns':
@@ -662,7 +662,7 @@ class VanillaWeekHandler {
 				tankman.y += 10;
 				game.precacheList.set('tankSong2', 'sound');
 
-				var tightBars:FlxSound = new FlxSound().loadEmbedded(Paths.sound('tankSong2'));
+				var tightBars:FlxSound = new FlxSound().loadEmbedded(Path.sound('tankSong2'));
 				FlxG.sound.list.add(tightBars);
 
 				tankman.animation.addByPrefix('tightBars', 'TANK TALK 2', 24, false);
@@ -700,18 +700,18 @@ class VanillaWeekHandler {
 				});
 				game.precacheList.set('stressCutscene', 'sound');
 
-				tankman2.frames = Paths.getSparrowAtlas('cutscenes/stress2');
+				tankman2.frames = Path.getSparrowAtlas('cutscenes/stress2');
 				game.addBehindDad(tankman2);
 
 				if (!ClientPrefs.lowQuality)
 				{
-					gfDance.frames = Paths.getSparrowAtlas('characters/gfTankmen');
+					gfDance.frames = Path.getSparrowAtlas('characters/gfTankmen');
 					gfDance.animation.addByPrefix('dance', 'GF Dancing at Gunpoint', 24, true);
 					gfDance.animation.play('dance', true);
 					game.addBehindGF(gfDance);
 				}
 
-				gfCutscene.frames = Paths.getSparrowAtlas('cutscenes/stressGF');
+				gfCutscene.frames = Path.getSparrowAtlas('cutscenes/stressGF');
 				gfCutscene.animation.addByPrefix('dieBitch', 'GF STARTS TO TURN PART 1', 24, false);
 				gfCutscene.animation.addByPrefix('getRektLmao', 'GF STARTS TO TURN PART 2', 24, false);
 				gfCutscene.animation.play('dieBitch', true);
@@ -727,13 +727,13 @@ class VanillaWeekHandler {
 				game.addBehindGF(picoCutscene);
 				picoCutscene.alpha = 0.00001;
 
-				boyfriendCutscene.frames = Paths.getSparrowAtlas('characters/BOYFRIEND');
+				boyfriendCutscene.frames = Path.getSparrowAtlas('characters/BOYFRIEND');
 				boyfriendCutscene.animation.addByPrefix('idle', 'BF idle dance', 24, false);
 				boyfriendCutscene.animation.play('idle', true);
 				boyfriendCutscene.animation.curAnim.finish();
 				game.addBehindBF(boyfriendCutscene);
 
-				var cutsceneSnd:FlxSound = new FlxSound().loadEmbedded(Paths.sound('stressCutscene'));
+				var cutsceneSnd:FlxSound = new FlxSound().loadEmbedded(Path.sound('stressCutscene'));
 				FlxG.sound.list.add(cutsceneSnd);
 
 				tankman.animation.addByPrefix('godEffingDamnIt', 'TANK TALK 3', 24, false);
@@ -875,7 +875,7 @@ class VanillaWeekHandler {
 							game.startCountdown();
 						}
 					});
-					FlxG.sound.play(Paths.soundRandom('thunder_', 1, 2));
+					FlxG.sound.play(Path.soundRandom('thunder_', 1, 2));
 					if (game.gf != null)
 						game.gf.playAnim('scared', true);
 					game.boyfriend.playAnim('scared', true);
@@ -894,7 +894,7 @@ class VanillaWeekHandler {
 							game.remove(blackScreen);
 						}
 					});
-					FlxG.sound.play(Paths.sound('Lights_Turn_On'));
+					FlxG.sound.play(Path.sound('Lights_Turn_On'));
 					game.snapCamFollowToPos(400, -2050);
 					FlxG.camera.focusOn(game.camFollow);
 					FlxG.camera.zoom = 1.5;
@@ -913,7 +913,7 @@ class VanillaWeekHandler {
 					});
 				case 'senpai' | 'roses' | 'thorns':
 					if (daSong == 'roses')
-						FlxG.sound.play(Paths.sound('ANGRY'));
+						FlxG.sound.play(Path.sound('ANGRY'));
 					schoolIntro(dialogueBox);
 
 				case 'ugh' | 'guns' | 'stress':
@@ -975,7 +975,7 @@ class VanillaWeekHandler {
 					gfVersion = 'gf';
 			}
 
-			switch (Paths.formatToSongPath(songName))
+			switch (Path.formatToSongPath(songName))
 			{
 				case 'stress':
 					gfVersion = 'pico-speaker';

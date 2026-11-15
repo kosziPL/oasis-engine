@@ -34,7 +34,7 @@ class FreeplayWeekSubstate extends MusicBeatSubstate
 		add(grpWeeks);
 
 		var title = new FlxText(0, 20, FlxG.width, "SELECT WEEK", 64);
-		title.setFormat(Paths.font("vcr.ttf"), 64, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
+		title.setFormat(Path.font("vcr.ttf"), 64, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 		title.borderSize = 4;
 		title.alpha = 0;
 		add(title);
@@ -67,25 +67,25 @@ class FreeplayWeekSubstate extends MusicBeatSubstate
 
 		if (controls.UI_UP_P)
 		{
-			FlxG.sound.play(Paths.sound('scrollMenu'), 0.4);
+			FlxG.sound.play(Path.sound('scrollMenu'), 0.4);
 			changeSelection(-1);
 		}
 		if (controls.UI_DOWN_P)
 		{
-			FlxG.sound.play(Paths.sound('scrollMenu'), 0.4);
+			FlxG.sound.play(Path.sound('scrollMenu'), 0.4);
 			changeSelection(1);
 		}
 
 		if (controls.ACCEPT)
 		{
-			FlxG.sound.play(Paths.sound('confirmMenu'), 0.7);
+			FlxG.sound.play(Path.sound('confirmMenu'), 0.7);
 			close();
 			if (onSelect != null)
 				onSelect(curSelected);
 		}
 		else if (controls.BACK)
 		{
-			FlxG.sound.play(Paths.sound('cancelMenu'), 0.7);
+			FlxG.sound.play(Path.sound('cancelMenu'), 0.7);
 			close();
 		}
 	}

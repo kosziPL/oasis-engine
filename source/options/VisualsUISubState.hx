@@ -93,7 +93,7 @@ class VisualsUISubState extends BaseOptionsMenu
 		if (ClientPrefs.pauseMusic == 'None')
 			FlxG.sound.music.volume = 0;
 		else
-			FlxG.sound.playMusic(Paths.music(Paths.formatToSongPath(ClientPrefs.pauseMusic), 'shared'));
+			FlxG.sound.playMusic(Path.music(Path.formatToSongPath(ClientPrefs.pauseMusic), 'shared'));
 
 		changedMusic = true;
 		ClientPrefs.saveSettings();
@@ -107,7 +107,7 @@ class VisualsUISubState extends BaseOptionsMenu
 	override function destroy()
 	{
 		if (changedMusic)
-			FlxG.sound.playMusic(Paths.music('freakyMenu'));
+			FlxG.sound.playMusic(Path.music('freakyMenu'));
 		super.destroy();
 	}
 

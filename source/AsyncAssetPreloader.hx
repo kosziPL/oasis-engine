@@ -73,7 +73,7 @@ class AsyncAssetPreloader
 		#end
 
 		// 1. Queue Inst and Vocals
-		var songFormat = Paths.formatToSongPath(songName);
+		var songFormat = Path.formatToSongPath(songName);
 		addSoundJob(songFormat + '/Inst', 'songs', 0);
 		addSoundJob(songFormat + '/Voices', 'songs', 0);
 
@@ -111,9 +111,9 @@ class AsyncAssetPreloader
 		var characterPath:String = 'characters/' + charName + '.json';
 		
 		#if MODS_ALLOWED
-		var path:String = Paths.modFolders(characterPath);
+		var path:String = Path.modFolders(characterPath);
 		if (!sys.FileSystem.exists(path)) {
-			path = Paths.getPreloadPath(characterPath);
+			path = Path.getPreloadPath(characterPath);
 		}
 		if (!sys.FileSystem.exists(path)) return null;
 		
@@ -155,9 +155,9 @@ class AsyncAssetPreloader
 			// Process job
 			var path:String = "";
 			if (job.type == 'sound') {
-				path = AssetHandler.getPath(job.key + '.' + Paths.SOUND_EXT, job.folder, job.library);
+				path = AssetManager.getPath(job.key + '.' + Path.SOUND_EXT, job.folder, job.library);
 			} else if (job.type == 'graphic') {
-				path = AssetHandler.getPath(job.key + '.png', job.folder, job.library);
+				path = AssetManager.getPath(job.key + '.png', job.folder, job.library);
 			}
 
 			var bytes:Bytes = null;
@@ -199,12 +199,12 @@ class AsyncAssetPreloader
 				if (job.type == 'sound') {
 					if (audioBuffer != null) {
 						gcRetention.remove(audioBuffer);
-						AssetHandler.getSoundFromAudioBuffer(audioBuffer, path);
+						AssetManager.getSoundFromAudioBuffer(audioBuffer, path);
 					}
 				} else if (job.type == 'graphic') {
 					if (bitmapData != null) {
 						gcRetention.remove(bitmapData);
-						AssetHandler.getGraphicFromBitmapData(bitmapData, path);
+						AssetManager.getGraphicFromBitmapData(bitmapData, path);
 					}
 				}
 				var main_t1 = Lib.getTimer();
@@ -218,9 +218,9 @@ class AsyncAssetPreloader
 					
 					// Check how many actually made it into the cache
 					var soundCacheCount = 0;
-					for (k in Paths.currentTrackedSounds.keys()) soundCacheCount++;
+					for (k in Path.currentTrackedSounds.keys()) soundCacheCount++;
 					var graphicCacheCount = 0;
-					for (k in Paths.currentTrackedAssets.keys()) graphicCacheCount++;
+					for (k in Path.currentTrackedAssets.keys()) graphicCacheCount++;
 					trace('AsyncAssetPreloader: Final cache count -> Sounds: ' + soundCacheCount + ' | Graphics: ' + graphicCacheCount);
 					
 					isRunning = false;
@@ -237,9 +237,9 @@ class AsyncAssetPreloader
 	private static function processJobSync(job:PreloadJob)
 	{
 		if (job.type == 'sound') {
-			AssetHandler.getSound(job.key, job.folder, job.library);
+			AssetManager.getSound(job.key, job.folder, job.library);
 		} else if (job.type == 'graphic') {
-			AssetHandler.getGraphic(job.key, job.library);
+			AssetManager.getGraphic(job.key, job.library);
 		}
 		completedJobs++;
 		if (completedJobs >= totalJobs) {

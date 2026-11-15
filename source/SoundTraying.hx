@@ -40,7 +40,7 @@ class SoundTraying extends FlxSoundTray
             removeChildAt(0);
         }
 
-        var boxData = Paths.image('soundtray/volumebox').bitmap;
+        var boxData = Path.image('soundtray/volumebox').bitmap;
         volumeBox = new Bitmap(boxData);
         
         var grayTransform = new openfl.geom.ColorTransform();
@@ -51,7 +51,7 @@ class SoundTraying extends FlxSoundTray
         
         addChild(volumeBox);
 
-        var bgBarsData = Paths.image('soundtray/bars_10').bitmap;
+        var bgBarsData = Path.image('soundtray/bars_10').bitmap;
         bgBars = new Bitmap(bgBarsData);
         
         bgBars.x = (volumeBox.width - bgBars.width) / 2;
@@ -76,7 +76,7 @@ class SoundTraying extends FlxSoundTray
         scaleY = trayScale;
         
         if (volumeBox != null && (volumeBox.bitmapData == null || volumeBox.bitmapData.width == 0)) {
-            var boxGraphic = Paths.image('soundtray/volumebox');
+            var boxGraphic = Path.image('soundtray/volumebox');
             if (boxGraphic != null && boxGraphic.bitmap != null) {
                 volumeBox.bitmapData = boxGraphic.bitmap;
             }
@@ -95,12 +95,12 @@ class SoundTraying extends FlxSoundTray
     {
         initTray();
 
-        var boxGraphic = Paths.image('soundtray/volumebox');
+        var boxGraphic = Path.image('soundtray/volumebox');
         if (boxGraphic != null && boxGraphic.bitmap != null) {
             volumeBox.bitmapData = boxGraphic.bitmap;
         }
         
-        var bgBarsGraphic = Paths.image('soundtray/bars_10');
+        var bgBarsGraphic = Path.image('soundtray/bars_10');
         if (bgBarsGraphic != null && bgBarsGraphic.bitmap != null) {
             bgBars.bitmapData = bgBarsGraphic.bitmap;
         }
@@ -112,7 +112,7 @@ class SoundTraying extends FlxSoundTray
         }
 
         if (globalVolume > 0) {
-            var activeGraphic = Paths.image('soundtray/bars_' + globalVolume);
+            var activeGraphic = Path.image('soundtray/bars_' + globalVolume);
             if (activeGraphic != null && activeGraphic.bitmap != null) {
                 activeBars.bitmapData = activeGraphic.bitmap;
             }
@@ -152,17 +152,17 @@ class SoundTraying extends FlxSoundTray
             
         }
         else if (FlxG.keys.anyJustReleased(FlxG.sound.muteKeys)) {
-            FlxG.sound.play(Paths.sound('Volup'));
+            FlxG.sound.play(Path.sound('Volup'));
         } 
         else if (up) {
             if (globalVolume >= 10) {
-                FlxG.sound.play(Paths.sound('VolMAX'));
+                FlxG.sound.play(Path.sound('VolMAX'));
             } else {
-                FlxG.sound.play(Paths.sound('Volup'));
+                FlxG.sound.play(Path.sound('Volup'));
             }
         } 
         else {
-            FlxG.sound.play(Paths.sound('Voldown'));
+            FlxG.sound.play(Path.sound('Voldown'));
         }
 
         _lastVolume = globalVolume;

@@ -28,7 +28,7 @@ class CamSongMeta
 		this.week          = week;
 		this.songCharacter = songCharacter;
 		this.color         = color;
-		this.folder        = (Paths.currentModDirectory != null) ? Paths.currentModDirectory : '';
+		this.folder        = (Path.currentModDirectory != null) ? Path.currentModDirectory : '';
 	}
 }
 
@@ -57,14 +57,14 @@ class CameraSongSelectState extends MusicBeatState
 		#end
 
 		// Background (same colour as freeplay)
-		bg = new FlxSprite().loadGraphic(Paths.image('menuDesat'));
+		bg = new FlxSprite().loadGraphic(Path.image('menuDesat'));
 		bg.color = 0xFF8700D4;
 		bg.scrollFactor.set();
 		add(bg);
 
 		// Title
 		titleText = new FlxText(0, 18, FlxG.width, "CAMERA EDITOR - SELECT SONG", 26);
-		titleText.setFormat(Paths.font("vcr.ttf"), 26, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
+		titleText.setFormat(Path.font("vcr.ttf"), 26, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 		titleText.borderSize = 2;
 		titleText.scrollFactor.set();
 		add(titleText);
@@ -82,7 +82,7 @@ class CameraSongSelectState extends MusicBeatState
 		// Tip bar (bottom)
 		tipText = new FlxText(0, FlxG.height - 26, FlxG.width,
 			"UP / DOWN: Select  |  ENTER: Open Editor  |  ESC: Cancel", 16);
-		tipText.setFormat(Paths.font("vcr.ttf"), 16, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
+		tipText.setFormat(Path.font("vcr.ttf"), 16, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 		tipText.scrollFactor.set();
 		add(tipText);
 
@@ -136,7 +136,7 @@ class CameraSongSelectState extends MusicBeatState
 
 		if (controls.BACK)
 		{
-			FlxG.sound.play(Paths.sound('cancelMenu'));
+			FlxG.sound.play(Path.sound('cancelMenu'));
 			MusicBeatState.switchState(new editors.MasterEditorMenu());
 		}
 
@@ -156,10 +156,10 @@ class CameraSongSelectState extends MusicBeatState
 	function confirmSong():Void
 	{
 		var meta:CamSongMeta = songs[curSelected];
-		var songLowercase:String = Paths.formatToSongPath(meta.songName);
+		var songLowercase:String = Path.formatToSongPath(meta.songName);
 
 		// Restore the mod directory the song was found in
-		Paths.currentModDirectory = meta.folder;
+		Path.currentModDirectory = meta.folder;
 
 		// Try loading with difficulty fallback: hard -> normal -> no suffix
 		var loaded:Bool = false;
@@ -177,11 +177,11 @@ class CameraSongSelectState extends MusicBeatState
 		if (!loaded)
 		{
 			trace("CameraSongSelectState: could not load song '" + meta.songName + "'");
-			FlxG.sound.play(Paths.sound('missnote' + FlxG.random.int(1, 3)), 0.5);
+			FlxG.sound.play(Path.sound('missnote' + FlxG.random.int(1, 3)), 0.5);
 			return;
 		}
 
-		FlxG.sound.play(Paths.sound('confirmMenu'));
+		FlxG.sound.play(Path.sound('confirmMenu'));
 
 		// Stop menu music before switching
 		if (FlxG.sound.music != null)
@@ -196,7 +196,7 @@ class CameraSongSelectState extends MusicBeatState
 	// ── Change Selection ──────────────────────────────────────────────────────
 	function changeSelection(change:Int = 0):Void
 	{
-		FlxG.sound.play(Paths.sound('scrollMenu'), 0.4);
+		FlxG.sound.play(Path.sound('scrollMenu'), 0.4);
 
 		curSelected += change;
 		if (curSelected < 0)  curSelected = songs.length - 1;
@@ -213,7 +213,7 @@ class CameraSongSelectState extends MusicBeatState
 
 		// Update icon
 		var meta:CamSongMeta = songs[curSelected];
-		Paths.currentModDirectory = meta.folder;
+		Path.currentModDirectory = meta.folder;
 		try { icon.changeIcon(meta.songCharacter); } catch (e:Dynamic) {}
 		icon.alpha = 1;
 

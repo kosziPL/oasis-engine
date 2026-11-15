@@ -58,9 +58,9 @@ class AchievementResettingSubState extends MusicBeatSubstate {
 
 		achieveIcon = new FlxSprite();
 		if (id > -1) {
-			achieveIcon.loadGraphic(Paths.image("achievements/" + achieve));
+			achieveIcon.loadGraphic(Path.image("achievements/" + achieve));
 		} else {
-			achieveIcon.loadGraphic(Paths.image("achievements/lockedachievement"));
+			achieveIcon.loadGraphic(Path.image("achievements/lockedachievement"));
 		}
 		achieveIcon.setGraphicSize(120, 120);
 		achieveIcon.updateHitbox();
@@ -110,7 +110,7 @@ class AchievementResettingSubState extends MusicBeatSubstate {
 
 		if (controls.UI_LEFT_P || controls.UI_RIGHT_P) {
 			if (currentSelection == 0 || currentSelection == 1) {
-				FlxG.sound.play(Paths.sound('scrollMenu'), 1);
+				FlxG.sound.play(Path.sound('scrollMenu'), 1);
 				currentSelection = (currentSelection == 0) ? 1 : 0;
 				updateOptions();
 			}
@@ -118,7 +118,7 @@ class AchievementResettingSubState extends MusicBeatSubstate {
 
 		if (controls.UI_DOWN_P) {
 			if (currentSelection == 0 || currentSelection == 1) {
-				FlxG.sound.play(Paths.sound('scrollMenu'), 1);
+				FlxG.sound.play(Path.sound('scrollMenu'), 1);
 				currentSelection = 2;
 				updateOptions();
 			}
@@ -126,14 +126,14 @@ class AchievementResettingSubState extends MusicBeatSubstate {
 
 		if (controls.UI_UP_P) {
 			if (currentSelection == 2) {
-				FlxG.sound.play(Paths.sound('scrollMenu'), 1);
+				FlxG.sound.play(Path.sound('scrollMenu'), 1);
 				currentSelection = 1; // Default back to No
 				updateOptions();
 			}
 		}
 
 		if (controls.BACK) {
-			FlxG.sound.play(Paths.sound('cancelMenu'), 1);
+			FlxG.sound.play(Path.sound('cancelMenu'), 1);
 			close();
 		} else if (controls.ACCEPT) {
 			if (currentSelection == 0) { // Yes, reset this achievement
@@ -147,7 +147,7 @@ class AchievementResettingSubState extends MusicBeatSubstate {
 				ClientPrefs.saveSettings();
 				if (callback != null) callback();
 			}
-			FlxG.sound.play(Paths.sound('cancelMenu'), 1);
+			FlxG.sound.play(Path.sound('cancelMenu'), 1);
 			close();
 		}
 

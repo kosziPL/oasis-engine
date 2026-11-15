@@ -36,12 +36,12 @@ class StickerFadeTransition extends FlxSubState
 
 		#if sys
 		var directories:Array<String> = [];
-		if (Paths.currentModDirectory != null && Paths.currentModDirectory.length > 0)
-			directories.push(Paths.mods(Paths.currentModDirectory + '/'));
+		if (Path.currentModDirectory != null && Path.currentModDirectory.length > 0)
+			directories.push(Path.mods(Path.currentModDirectory + '/'));
 		
-		for (mod in Paths.getGlobalMods())
+		for (mod in Path.getGlobalMods())
 		{
-			var p = Paths.mods(mod + '/');
+			var p = Path.mods(mod + '/');
 			if (!directories.contains(p))
 				directories.push(p);
 		}
@@ -106,15 +106,15 @@ class StickerFadeTransition extends FlxSubState
 		var loadedGraphics:Array<FlxGraphic> = [];
 		for (file in stickerPool)
 		{
-			var g = Paths.image('stickers/' + file);
+			var g = Path.image('stickers/' + file);
 			if (g == null)
-				g = Paths.image(file);
+				g = Path.image(file);
 			if (g != null)
 				loadedGraphics.push(g);
 		}
 		if (loadedGraphics.length == 0)
 		{
-			var fallback = Paths.image('logo');
+			var fallback = Path.image('logo');
 			if (fallback != null)
 				loadedGraphics.push(fallback);
 		}
@@ -262,7 +262,7 @@ class StickerFadeTransition extends FlxSubState
 		if (soundPool.length > 0)
 		{
 			var snd = soundPool[FlxG.random.int(0, soundPool.length - 1)];
-			FlxG.sound.play(Paths.sound('stickers/' + snd), 0.3);
+			FlxG.sound.play(Path.sound('stickers/' + snd), 0.3);
 		}
 	}
 }

@@ -367,16 +367,16 @@ class ChartingState extends MusicBeatState
 
 	override function create()
 	{
-		Paths.localTrackedAssets = [];
-		Paths.clearUnusedMemory();
+		Path.localTrackedAssets = [];
+		Path.clearUnusedMemory();
 
 		#if !html5
 		openfl.Assets.cache.clear("songs");
 		var keysToRemove:Array<String> = [];
-		for (key in Paths.currentTrackedSounds.keys())
+		for (key in Path.currentTrackedSounds.keys())
 		{
 			if (key != null
-				&& !Paths.dumpExclusions.contains(key)
+				&& !Path.dumpExclusions.contains(key)
 				&& (key.contains('songs/') || key.contains('Voices') || key.contains('Inst')))
 			{
 				keysToRemove.push(key);
@@ -385,7 +385,7 @@ class ChartingState extends MusicBeatState
 		for (key in keysToRemove)
 		{
 			lime.utils.Assets.cache.clear(key);
-			Paths.currentTrackedSounds.remove(key);
+			Path.currentTrackedSounds.remove(key);
 		}
 		#end
 
@@ -417,7 +417,7 @@ class ChartingState extends MusicBeatState
 		}
 		normalizeOasisChart(); // Shit fuck
 
-		// Paths.clearMemory();
+		// Path.clearMemory();
 
 		#if desktop
 		// Updating Discord Rich Presence
@@ -426,7 +426,7 @@ class ChartingState extends MusicBeatState
 
 		vortex = FlxG.save.data.chart_vortex;
 		ignoreWarnings = FlxG.save.data.ignoreWarnings;
-		var bg:FlxSprite = new FlxSprite().loadGraphic(Paths.image('menuDesat'));
+		var bg:FlxSprite = new FlxSprite().loadGraphic(Path.image('menuDesat'));
 		bg.scrollFactor.set();
 		bg.color = 0xFF222222;
 
@@ -443,7 +443,7 @@ class ChartingState extends MusicBeatState
 		], flixel.util.FlxColor.RED);
 		eventIcon.scrollFactor.set(1, 1);
 
-		eventPlayheadArrow = new FlxSprite(0, 50).loadGraphic(Paths.image('eventArrow'));
+		eventPlayheadArrow = new FlxSprite(0, 50).loadGraphic(Path.image('eventArrow'));
 		eventPlayheadArrow.setGraphicSize(GRID_SIZE, GRID_SIZE);
 		eventPlayheadArrow.updateHitbox();
 		eventPlayheadArrow.scrollFactor.set(1, 1);
@@ -512,7 +512,7 @@ class ChartingState extends MusicBeatState
 
 		// sections = _song.notes;
 
-		currentSongName = Paths.formatToSongPath(_song.song);
+		currentSongName = Path.formatToSongPath(_song.song);
 		loadSong();
 		reloadGridLayer();
 		Conductor.changeBPM(_song.bpm);
@@ -648,7 +648,7 @@ class ChartingState extends MusicBeatState
 		{
 			var tipText:FlxText = new FlxText(UI_box.x, UI_box.y + UI_box.height + 8, 0, tipTextArray[i], 16);
 			tipText.y += i * 12;
-			tipText.setFormat(Paths.font("vcr.ttf"), 14, FlxColor.WHITE, LEFT /*, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK*/);
+			tipText.setFormat(Path.font("vcr.ttf"), 14, FlxColor.WHITE, LEFT /*, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK*/);
 			// tipText.borderSize = 2;
 			tipText.scrollFactor.set();
 			add(tipText);
@@ -1147,7 +1147,7 @@ class ChartingState extends MusicBeatState
 		});
 		var reloadSong:FlxButton = new FlxButton(saveButton.x + 90, saveButton.y, "Reload Audio", function()
 		{
-			currentSongName = Paths.formatToSongPath(UI_songTitle.text);
+			currentSongName = Path.formatToSongPath(UI_songTitle.text);
 			loadSong();
 			updateWaveform();
 		});
@@ -1165,10 +1165,10 @@ class ChartingState extends MusicBeatState
 		});
 		var loadEventJson:FlxButton = new FlxButton(loadAutosaveBtn.x, loadAutosaveBtn.y + 30, 'Load Events', function()
 		{
-			var songName:String = Paths.formatToSongPath(_song.song);
-			var file:String = Paths.json(songName + '/events');
+			var songName:String = Path.formatToSongPath(_song.song);
+			var file:String = Path.json(songName + '/events');
 			#if sys
-			if (#if MODS_ALLOWED FileSystem.exists(Paths.modsJson(songName + '/events')) || #end FileSystem.exists(file))
+			if (#if MODS_ALLOWED FileSystem.exists(Path.modsJson(songName + '/events')) || #end FileSystem.exists(file))
 			#else
 			if (OpenFlAssets.exists(file))
 			#end
@@ -1216,18 +1216,18 @@ class ChartingState extends MusicBeatState
 
 		#if MODS_ALLOWED
 		var directories:Array<String> = [
-			Paths.mods('characters/'),
-			Paths.mods(Paths.currentModDirectory + '/characters/'),
-			Paths.getPreloadPath('characters/')
+			Path.mods('characters/'),
+			Path.mods(Path.currentModDirectory + '/characters/'),
+			Path.getPreloadPath('characters/')
 		];
-		for (mod in Paths.getGlobalMods())
-			directories.push(Paths.mods(mod + '/characters/'));
+		for (mod in Path.getGlobalMods())
+			directories.push(Path.mods(mod + '/characters/'));
 		#else
-		var directories:Array<String> = [Paths.getPreloadPath('characters/')];
+		var directories:Array<String> = [Path.getPreloadPath('characters/')];
 		#end
 
 		var tempMap:Map<String, Bool> = new Map<String, Bool>();
-		characterList = CoolUtil.coolTextFile(Paths.txt('characterList'));
+		characterList = CoolUtil.coolTextFile(Path.txt('characterList'));
 		for (i in 0...characterList.length)
 		{
 			tempMap.set(characterList[i], true);
@@ -1267,18 +1267,18 @@ class ChartingState extends MusicBeatState
 
 		#if MODS_ALLOWED
 		var directories:Array<String> = [
-			Paths.mods('stages/'),
-			Paths.mods(Paths.currentModDirectory + '/stages/'),
-			Paths.getPreloadPath('stages/')
+			Path.mods('stages/'),
+			Path.mods(Path.currentModDirectory + '/stages/'),
+			Path.getPreloadPath('stages/')
 		];
-		for (mod in Paths.getGlobalMods())
-			directories.push(Paths.mods(mod + '/stages/'));
+		for (mod in Path.getGlobalMods())
+			directories.push(Path.mods(mod + '/stages/'));
 		#else
-		var directories:Array<String> = [Paths.getPreloadPath('stages/')];
+		var directories:Array<String> = [Path.getPreloadPath('stages/')];
 		#end
 
 		tempMap.clear();
-		var stageFile:Array<String> = CoolUtil.coolTextFile(Paths.txt('stageList'));
+		var stageFile:Array<String> = CoolUtil.coolTextFile(Path.txt('stageList'));
 		var stages:Array<String> = [];
 		for (i in 0...stageFile.length)
 		{
@@ -1741,10 +1741,10 @@ class ChartingState extends MusicBeatState
 		var directories:Array<String> = [];
 
 		#if MODS_ALLOWED
-		directories.push(Paths.mods('notetypes/'));
-		directories.push(Paths.mods(Paths.currentModDirectory + '/notetypes/'));
-		for (mod in Paths.getGlobalMods())
-			directories.push(Paths.mods(mod + '/notetypes/'));
+		directories.push(Path.mods('notetypes/'));
+		directories.push(Path.mods(Path.currentModDirectory + '/notetypes/'));
+		for (mod in Path.getGlobalMods())
+			directories.push(Path.mods(mod + '/notetypes/'));
 		#end
 
 		for (i in 0...directories.length)
@@ -1811,10 +1811,10 @@ class ChartingState extends MusicBeatState
 		var directories:Array<String> = [];
 
 		#if MODS_ALLOWED
-		directories.push(Paths.mods('events/'));
-		directories.push(Paths.mods(Paths.currentModDirectory + '/events/'));
-		for (mod in Paths.getGlobalMods())
-			directories.push(Paths.mods(mod + '/events/'));
+		directories.push(Path.mods('events/'));
+		directories.push(Path.mods(Path.currentModDirectory + '/events/'));
+		for (mod in Path.getGlobalMods())
+			directories.push(Path.mods(mod + '/events/'));
 		#end
 
 		for (i in 0...directories.length)
@@ -2227,7 +2227,7 @@ class ChartingState extends MusicBeatState
 			// vocals.stop();
 		}
 
-		var file:Dynamic = Paths.voices(currentSongName);
+		var file:Dynamic = Path.voices(currentSongName);
 		vocals = new FlxSound();
 		if (Std.isOfType(file, Sound) || OpenFlAssets.exists(file))
 		{
@@ -2243,7 +2243,7 @@ class ChartingState extends MusicBeatState
 
 	function generateSong()
 	{
-		FlxG.sound.playMusic(Paths.inst(currentSongName), 0.6 /*, false*/);
+		FlxG.sound.playMusic(Path.inst(currentSongName), 0.6 /*, false*/);
 		if (instVolume != null)
 			FlxG.sound.music.volume = instVolume.value;
 		if (check_mute_inst != null && check_mute_inst.checked)
@@ -2618,7 +2618,7 @@ class ChartingState extends MusicBeatState
 			{
 				PlayState.chartingMode = false;
 				MusicBeatState.switchState(new editors.MasterEditorMenu());
-				FlxG.sound.playMusic(Paths.music('freakyMenu'));
+				FlxG.sound.playMusic(Path.music('freakyMenu'));
 				FlxG.mouse.visible = false;
 				return;
 			}
@@ -3205,7 +3205,7 @@ class ChartingState extends MusicBeatState
 								soundToPlay = 'GF_' + Std.string(data + 1);
 							}
 
-							var sound = FlxG.sound.play(Paths.sound(soundToPlay));
+							var sound = FlxG.sound.play(Path.sound(soundToPlay));
 							if (sound != null)
 							{
 								sound.pan = !note.mustPress ? -0.3 : 0.3;
@@ -3226,7 +3226,7 @@ class ChartingState extends MusicBeatState
 			var lastMetroStep:Int = Math.floor(((lastConductorPos + metronomeOffsetStepper.value) / metroInterval) / 1000);
 			if (metroStep != lastMetroStep)
 			{
-				var sound = FlxG.sound.play(Paths.sound('Metronome_Tick'));
+				var sound = FlxG.sound.play(Path.sound('Metronome_Tick'));
 				if (sound != null)
 				{
 					sound.pitch = 1.0;
@@ -3561,12 +3561,12 @@ class ChartingState extends MusicBeatState
 			}
 			audioBuffers[0] = null;
 			#if MODS_ALLOWED
-			if(FileSystem.exists(Paths.modFolders('songs/' + currentSongName + '/Inst.ogg'))) {
-				audioBuffers[0] = AudioBuffer.fromFile(Paths.modFolders('songs/' + currentSongName + '/Inst.ogg'));
+			if(FileSystem.exists(Path.modFolders('songs/' + currentSongName + '/Inst.ogg'))) {
+				audioBuffers[0] = AudioBuffer.fromFile(Path.modFolders('songs/' + currentSongName + '/Inst.ogg'));
 				//trace('Custom vocals found');
 			}
 			else { #end
-				var leVocals:String = Paths.getPath(currentSongName + '/Inst.' + Paths.SOUND_EXT, SOUND, 'songs');
+				var leVocals:String = Path.getPath(currentSongName + '/Inst.' + Path.SOUND_EXT, SOUND, 'songs');
 				if (OpenFlAssets.exists(leVocals)) { //Vanilla inst
 					audioBuffers[0] = AudioBuffer.fromFile('./' + leVocals.substr(6));
 					//trace('Inst found');
@@ -3580,11 +3580,11 @@ class ChartingState extends MusicBeatState
 			}
 			audioBuffers[1] = null;
 			#if MODS_ALLOWED
-			if(FileSystem.exists(Paths.modFolders('songs/' + currentSongName + '/Voices.ogg'))) {
-				audioBuffers[1] = AudioBuffer.fromFile(Paths.modFolders('songs/' + currentSongName + '/Voices.ogg'));
+			if(FileSystem.exists(Path.modFolders('songs/' + currentSongName + '/Voices.ogg'))) {
+				audioBuffers[1] = AudioBuffer.fromFile(Path.modFolders('songs/' + currentSongName + '/Voices.ogg'));
 				//trace('Custom vocals found');
 			} else { #end
-				var leVocals:String = Paths.getPath(currentSongName + '/Voices.' + Paths.SOUND_EXT, SOUND, 'songs');
+				var leVocals:String = Path.getPath(currentSongName + '/Voices.' + Path.SOUND_EXT, SOUND, 'songs');
 				if (OpenFlAssets.exists(leVocals)) { //Vanilla voices
 					audioBuffers[1] = AudioBuffer.fromFile('./' + leVocals.substr(6));
 					//trace('Voices found, LETS FUCKING GOOOO');
@@ -3740,15 +3740,15 @@ class ChartingState extends MusicBeatState
 
 	function getSongSoundPath(soundName:String):String
 	{
-		var songKey:String = Paths.formatToSongPath(currentSongName) + '/' + soundName;
+		var songKey:String = Path.formatToSongPath(currentSongName) + '/' + soundName;
 		#if MODS_ALLOWED
-		var file:String = Paths.modsSounds('songs', songKey);
+		var file:String = Path.modsSounds('songs', songKey);
 		if (sys.FileSystem.exists(file))
 		{
 			return file;
 		}
 		#end
-		var gottenPath:String = Paths.getPath('songs/' + songKey + '.' + Paths.SOUND_EXT, SOUND);
+		var gottenPath:String = Path.getPath('songs/' + songKey + '.' + Path.SOUND_EXT, SOUND);
 		var idx = gottenPath.indexOf(':');
 		if (idx != -1)
 			gottenPath = gottenPath.substring(idx + 1);
@@ -4263,19 +4263,19 @@ class ChartingState extends MusicBeatState
 	{
 		var characterPath:String = 'characters/' + char + '.json';
 		#if MODS_ALLOWED
-		var path:String = Paths.modFolders(characterPath);
+		var path:String = Path.modFolders(characterPath);
 		if (!FileSystem.exists(path))
 		{
-			path = Paths.getPreloadPath(characterPath);
+			path = Path.getPreloadPath(characterPath);
 		}
 
 		if (!FileSystem.exists(path))
 		#else
-		var path:String = Paths.getPreloadPath(characterPath);
+		var path:String = Path.getPreloadPath(characterPath);
 		if (!OpenFlAssets.exists(path))
 		#end
 		{
-			path = Paths.getPreloadPath('characters/' + Character.DEFAULT_CHARACTER +
+			path = Path.getPreloadPath('characters/' + Character.DEFAULT_CHARACTER +
 				'.json'); // If a character couldn't be found, change him to BF just to prevent a crash
 		}
 
@@ -4390,7 +4390,7 @@ class ChartingState extends MusicBeatState
 					theType = '?';
 
 				var daText:AttachedFlxText = new AttachedFlxText(0, 0, 100, theType, 24);
-				daText.setFormat(Paths.font("vcr.ttf"), 24, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
+				daText.setFormat(Path.font("vcr.ttf"), 24, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 				daText.xAdd = -32;
 				daText.yAdd = 6;
 				daText.borderSize = 1;
@@ -4434,7 +4434,7 @@ class ChartingState extends MusicBeatState
 					text = note.eventLength + ' Events:\n' + note.eventName;
 
 				var daText:AttachedFlxText = new AttachedFlxText(0, 0, 400, text, 12);
-				daText.setFormat(Paths.font("vcr.ttf"), 12, FlxColor.WHITE, RIGHT, FlxTextBorderStyle.OUTLINE_FAST, FlxColor.BLACK);
+				daText.setFormat(Path.font("vcr.ttf"), 12, FlxColor.WHITE, RIGHT, FlxTextBorderStyle.OUTLINE_FAST, FlxColor.BLACK);
 				daText.xAdd = -410;
 				daText.borderSize = 1;
 				if (note.eventLength > 1)
@@ -4505,7 +4505,7 @@ class ChartingState extends MusicBeatState
 		else
 		{ // EVENT NOTE
 			note = new Note(daStrumTime, 0, null, null, true);
-			note.loadGraphic(Paths.image('eventArrow'));
+			note.loadGraphic(Path.image('eventArrow'));
 			note.eventName = getEventName(i[1]);
 			note.eventLength = i[1].length;
 			if (i[1].length < 2)
@@ -5078,7 +5078,7 @@ class ChartingState extends MusicBeatState
 				"--file-selection",
 				"--save",
 				"--title=Save Chart",
-				"--filename=" + Paths.formatToSongPath(_song.song) + ".json"
+				"--filename=" + Path.formatToSongPath(_song.song) + ".json"
 			]);
 			process.exitCode(true);
 			var path = process.stdout.readAll().toString().trim();
@@ -5093,7 +5093,7 @@ class ChartingState extends MusicBeatState
 			_file.addEventListener(Event.COMPLETE, onSaveComplete);
 			_file.addEventListener(Event.CANCEL, onSaveCancel);
 			_file.addEventListener(IOErrorEvent.IO_ERROR, onSaveError);
-			_file.save(data.trim(), Paths.formatToSongPath(_song.song) + ".json");
+			_file.save(data.trim(), Path.formatToSongPath(_song.song) + ".json");
 			#end
 		}
 	}
@@ -5297,7 +5297,7 @@ class ChartingState extends MusicBeatState
 		try
 		{
 			var dadSprite = new FlxSprite(dadX, 0);
-			dadSprite.frames = Paths.getSparrowAtlas('charteditor/chartdude');
+			dadSprite.frames = Path.getSparrowAtlas('charteditor/chartdude');
 			dadSprite.animation.addByPrefix('idle', 'idle', 120, true);
 			dadSprite.animation.addByPrefix('left', 'left', 24, false);
 			dadSprite.animation.addByPrefix('down', 'down', 24, false);
@@ -5311,7 +5311,7 @@ class ChartingState extends MusicBeatState
 			playChartCharAnim(visualDad, 'idle', false);
 
 			var bfSprite = new FlxSprite(bfX, 0);
-			bfSprite.frames = Paths.getSparrowAtlas('charteditor/chartbf');
+			bfSprite.frames = Path.getSparrowAtlas('charteditor/chartbf');
 			bfSprite.animation.addByPrefix('idle', 'idle', 120, true);
 			bfSprite.animation.addByPrefix('left', 'left', 24, false);
 			bfSprite.animation.addByPrefix('down', 'down', 24, false);

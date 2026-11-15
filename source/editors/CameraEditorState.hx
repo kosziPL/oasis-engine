@@ -736,7 +736,7 @@ class CameraEditorState extends PlayState
 	function addText(group:FlxSpriteGroup, x:Float, y:Float, w:Float, text:String, size:Int = 12, color:FlxColor = FlxColor.WHITE):FlxText
 	{
 		var label = new FlxText(x, y, w, text, size);
-		label.setFormat(Paths.font('vcr.ttf'), size, color);
+		label.setFormat(Path.font('vcr.ttf'), size, color);
 		label.scrollFactor.set();
 		group.add(label);
 		return label;
@@ -1167,7 +1167,7 @@ class CameraEditorState extends PlayState
 			else
 			{
 				label = new FlxText(0, 0, 64, '', 10);
-				label.setFormat(Paths.font('vcr.ttf'), 10, 0xFFCEC4E3);
+				label.setFormat(Path.font('vcr.ttf'), 10, 0xFFCEC4E3);
 				label.scrollFactor.set();
 				timelineLabels.add(label);
 			}

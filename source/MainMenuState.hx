@@ -50,7 +50,7 @@ class MainMenuState extends MusicBeatState
     override function create()
     {
         #if MODS_ALLOWED
-        Paths.pushGlobalMods();
+        Path.pushGlobalMods();
         #end
         WeekData.loadTheFirstEnabledMod();
 
@@ -76,7 +76,7 @@ class MainMenuState extends MusicBeatState
         persistentUpdate = persistentDraw = true;
 
         var yScroll:Float = Math.max(0.25 - (0.05 * (optionShit.length - 4)), 0.1);
-        var bg:FlxSprite = new FlxSprite(-80).loadGraphic(Paths.image('menuBG'));
+        var bg:FlxSprite = new FlxSprite(-80).loadGraphic(Path.image('menuBG'));
         bg.scrollFactor.set(0, yScroll);
         bg.setGraphicSize(Std.int(bg.width * 1.175));
         bg.updateHitbox();
@@ -84,7 +84,7 @@ class MainMenuState extends MusicBeatState
         bg.antialiasing = ClientPrefs.globalAntialiasing;
         add(bg);
 
-        magenta = new FlxSprite(-80).loadGraphic(Paths.image('menuDesat'));
+        magenta = new FlxSprite(-80).loadGraphic(Path.image('menuDesat'));
         magenta.scrollFactor.set(0, yScroll);
         magenta.setGraphicSize(Std.int(magenta.width * 1.175));
         magenta.updateHitbox();
@@ -105,7 +105,7 @@ class MainMenuState extends MusicBeatState
             var offset:Float = 108 - (Math.max(optionShit.length, 4) - 4) * 80;
             var menuItem:FlxSprite = new FlxSprite(0, (i * 130) + offset);
             
-            menuItem.frames = Paths.getSparrowAtlas('mainmenu/menu_' + optionShit[i]);
+            menuItem.frames = Path.getSparrowAtlas('mainmenu/menu_' + optionShit[i]);
             menuItem.animation.addByPrefix('idle', optionShit[i] + " basic", 24);
             menuItem.animation.addByPrefix('selected', optionShit[i] + " white", 24);
             menuItem.animation.play('idle');
@@ -166,25 +166,25 @@ class MainMenuState extends MusicBeatState
         {
             // NAWIGACJA
             if (controls.UI_UP_P) {
-                FlxG.sound.play(Paths.sound('scrollMenu'));
+                FlxG.sound.play(Path.sound('scrollMenu'));
                 changeItem(-1);
             }
             if (controls.UI_DOWN_P) {
-                FlxG.sound.play(Paths.sound('scrollMenu'));
+                FlxG.sound.play(Path.sound('scrollMenu'));
                 changeItem(1);
             }
 
             if (controls.BACK)
             {
                 selectedSomethin = true;
-                FlxG.sound.play(Paths.sound('cancelMenu'));
+                FlxG.sound.play(Path.sound('cancelMenu'));
                 MusicBeatState.switchState(new TitleState());
             }
 
             if (controls.ACCEPT)
             {
                 selectedSomethin = true;
-                FlxG.sound.play(Paths.sound('confirmMenu'));
+                FlxG.sound.play(Path.sound('confirmMenu'));
 
                 if(ClientPrefs.flashing) FlxFlicker.flicker(magenta, 1.1, 0.15, false);
 

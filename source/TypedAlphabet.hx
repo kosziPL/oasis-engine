@@ -48,7 +48,7 @@ class TypedAlphabet extends Alphabet
 				showCharacterUpTo(_curLetter + 1);
 				if(!playedSound && sound != '' && (delay > 0.025 || _curLetter % 2 == 0))
 				{
-					var actualSound = Paths.sound(sound);
+					var actualSound = Path.sound(sound);
 					if (actualSound != null) {
 						if (dialogueSound == null) {
 							dialogueSound = FlxG.sound.play(actualSound, volume);
@@ -104,7 +104,7 @@ class TypedAlphabet extends Alphabet
 
 		showCharacterUpTo(letters.length - 1);
 		if(sound != '') {
-			var actualSound = Paths.sound(sound);
+			var actualSound = Path.sound(sound);
 			if (actualSound != null) FlxG.sound.play(actualSound, volume);
 		}
 		finishedText = true;

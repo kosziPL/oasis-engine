@@ -28,7 +28,7 @@ class CustomPrefs
 		default_note_asset_name = "NOTE_assets";
 		title_tempo = 102;
 
-		var path = Paths.json("customPrefs");
+		var path = Path.json("customPrefs");
 		if (path == null || !FileSystem.exists(path)) {
 			path = "assets/fnf/data/customPrefs.json";
 		}

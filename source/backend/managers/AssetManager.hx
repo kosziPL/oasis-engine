@@ -1,4 +1,4 @@
-package;
+package backend.managers;
 
 import sys.FileSystem;
 import sys.io.File;
@@ -17,7 +17,7 @@ using StringTools;
  * A central handler for resolving all asset paths properly.
  * Supports a fallback system: priority.json > current mod > global mods > base fnf files > openfl library.
  */
-class AssetHandler
+class AssetManager
 {
 	public static var priorityAssets:Map<String, String> = null;
 
@@ -64,7 +64,7 @@ class AssetHandler
 		init(); // ensure priority json is loaded
 
 		// 0. Base FNF (File System) ONLY if we are in FNF week (currentModDirectory empty)
-		if (Paths.currentModDirectory == null || Paths.currentModDirectory == '')
+		if (Path.currentModDirectory == null || Path.currentModDirectory == '')
 		{
 			var basePath = 'assets/fnf/$fullKey';
 			if (FileSystem.exists(basePath)) return basePath;
@@ -79,14 +79,14 @@ class AssetHandler
 		}
 
 		// 2. Current Mod
-		if (Paths.currentModDirectory != null && Paths.currentModDirectory.length > 0)
+		if (Path.currentModDirectory != null && Path.currentModDirectory.length > 0)
 		{
-			var path = 'assets/custom/${Paths.currentModDirectory}/$fullKey';
+			var path = 'assets/custom/${Path.currentModDirectory}/$fullKey';
 			if (FileSystem.exists(path)) return path;
 		}
 
 		// 4. Global Mods
-		for (mod in Paths.getGlobalMods())
+		for (mod in Path.getGlobalMods())
 		{
 			var path = 'assets/custom/$mod/$fullKey';
 			if (FileSystem.exists(path)) return path;
@@ -103,9 +103,9 @@ class AssetHandler
 		{
 			return '$library:assets/fnf/$library/$fullKey';
 		}
-		if (Paths.currentLevel != null && Paths.currentLevel != "shared")
+		if (Path.currentLevel != null && Path.currentLevel != "shared")
 		{
-			var levelID = '${Paths.currentLevel}:assets/fnf/${Paths.currentLevel}/$fullKey';
+			var levelID = '${Path.currentLevel}:assets/fnf/${Path.currentLevel}/$fullKey';
 			if (OpenFlAssets.exists(levelID)) return levelID;
 		}
 		var sharedID = 'shared:assets/fnf/shared/$fullKey';
@@ -118,13 +118,13 @@ class AssetHandler
 	{
 		var path = getPath(key + '.png', 'images', library);
 		
-		if (Paths.currentTrackedAssets.exists(path))
+		if (Path.currentTrackedAssets.exists(path))
 		{
-			if (!Paths.localTrackedAssets.contains(path))
+			if (!Path.localTrackedAssets.contains(path))
 			{
-				Paths.localTrackedAssets.push(path);
+				Path.localTrackedAssets.push(path);
 			}
-			return Paths.currentTrackedAssets.get(path);
+			return Path.currentTrackedAssets.get(path);
 		}
 
 		var newGraphic:FlxGraphic = null;
@@ -149,10 +149,10 @@ class AssetHandler
 
 	public static function getGraphicFromBitmapData(bitmap:BitmapData, path:String):FlxGraphic
 	{
-		if (Paths.currentTrackedAssets.exists(path))
+		if (Path.currentTrackedAssets.exists(path))
 		{
-			if (!Paths.localTrackedAssets.contains(path)) Paths.localTrackedAssets.push(path);
-			return Paths.currentTrackedAssets.get(path);
+			if (!Path.localTrackedAssets.contains(path)) Path.localTrackedAssets.push(path);
+			return Path.currentTrackedAssets.get(path);
 		}
 
 		var newGraphic:FlxGraphic = null;
@@ -180,19 +180,19 @@ class AssetHandler
 
 			newGraphic.persist = true;
 			
-			for (coreKey in Paths.coreAssetsToKeep) {
+			for (coreKey in Path.coreAssetsToKeep) {
 				if (path.endsWith('/' + coreKey + '.png') || path.endsWith('\\' + coreKey + '.png')) {
-					Paths.excludeAsset(path);
+					Path.excludeAsset(path);
 					break;
 				}
 			}
 
-			Paths.currentTrackedAssets.set(path, newGraphic);
-			Paths.localTrackedAssets.push(path);
+			Path.currentTrackedAssets.set(path, newGraphic);
+			Path.localTrackedAssets.push(path);
 		}
 		else
 		{
-			trace('AssetHandler could not load graphic: ' + path);
+			trace('AssetManager could not load graphic: ' + path);
 		}
 		return newGraphic;
 	}
@@ -243,15 +243,15 @@ class AssetHandler
 
 	public static function getSound(key:String, folder:String = 'sounds', library:String = null):Sound
 	{
-		var path = getPath(key + '.' + Paths.SOUND_EXT, folder, library);
+		var path = getPath(key + '.' + Path.SOUND_EXT, folder, library);
 		
-		if (Paths.currentTrackedSounds.exists(path))
+		if (Path.currentTrackedSounds.exists(path))
 		{
-			if (!Paths.localTrackedAssets.contains(path))
+			if (!Path.localTrackedAssets.contains(path))
 			{
-				Paths.localTrackedAssets.push(path);
+				Path.localTrackedAssets.push(path);
 			}
-			return Paths.currentTrackedSounds.get(path);
+			return Path.currentTrackedSounds.get(path);
 		}
 		
 		var sound:Sound = null;
@@ -274,10 +274,10 @@ class AssetHandler
 
 	public static function getSoundFromAudioBuffer(buffer:lime.media.AudioBuffer, path:String):Sound
 	{
-		if (Paths.currentTrackedSounds.exists(path))
+		if (Path.currentTrackedSounds.exists(path))
 		{
-			if (!Paths.localTrackedAssets.contains(path)) Paths.localTrackedAssets.push(path);
-			return Paths.currentTrackedSounds.get(path);
+			if (!Path.localTrackedAssets.contains(path)) Path.localTrackedAssets.push(path);
+			return Path.currentTrackedSounds.get(path);
 		}
 
 		var sound:Sound = null;
@@ -294,12 +294,12 @@ class AssetHandler
 	private static function __finalizeSound(sound:Sound, path:String):Sound
 	{
 		if (sound != null) {
-			Paths.currentTrackedSounds.set(path, sound);
-			Paths.localTrackedAssets.push(path);
+			Path.currentTrackedSounds.set(path, sound);
+			Path.localTrackedAssets.push(path);
 			
-			for (coreKey in Paths.coreAssetsToKeep) {
+			for (coreKey in Path.coreAssetsToKeep) {
 				if (path.endsWith('/' + coreKey + '.ogg') || path.endsWith('\\' + coreKey + '.ogg')) {
-					Paths.excludeAsset(path);
+					Path.excludeAsset(path);
 					break;
 				}
 			}

@@ -1,4 +1,4 @@
-package;
+package backend.managers;
 
 import animateatlas.AtlasFrameMaker;
 import flixel.math.FlxPoint;
@@ -24,7 +24,7 @@ import flash.media.Sound;
 
 using StringTools;
 
-class Paths
+class Path
 {
 	inline public static var SOUND_EXT = #if web "mp3" #else "ogg" #end;
 	inline public static var VIDEO_EXT = "mp4";
@@ -65,7 +65,7 @@ class Paths
 				var isSound = coreKey.indexOf('intro') != -1 || coreKey.indexOf('missnote') != -1 || coreKey == 'hitsound' || coreKey == 'freakyMenu';
 				var folder = isSound ? (coreKey == 'freakyMenu' ? 'music' : 'sounds') : 'images';
 				var ext = isSound ? SOUND_EXT : 'png';
-				var path = AssetHandler.getPath(coreKey + '.' + ext, folder, null);
+				var path = AssetManager.getPath(coreKey + '.' + ext, folder, null);
 				
 				if (sys.FileSystem.exists(path)) {
 					var bytes = sys.io.File.getBytes(path);
@@ -74,13 +74,13 @@ class Paths
 						if (isSound) {
 							var audioBuffer = lime.media.AudioBuffer.fromBytes(bytes);
 							MainThreadDispatcher.runOnMain(function() {
-								AssetHandler.getSoundFromAudioBuffer(audioBuffer, path);
+								AssetManager.getSoundFromAudioBuffer(audioBuffer, path);
 							});
 						} else {
 							var byteArray = openfl.utils.ByteArray.fromBytes(bytes);
 							var bitmapData = openfl.display.BitmapData.fromBytes(byteArray);
 							MainThreadDispatcher.runOnMain(function() {
-								AssetHandler.getGraphicFromBitmapData(bitmapData, path);
+								AssetManager.getGraphicFromBitmapData(bitmapData, path);
 							});
 						}
 					}
@@ -197,17 +197,17 @@ class Paths
 
 	public static function getPath(file:String, type:AssetType, ?library:Null<String> = null)
 	{
-		return AssetHandler.getPath(file, '', library);
+		return AssetManager.getPath(file, '', library);
 	}
 
 	static public function getLibraryPath(file:String, library = "preload")
 	{
-		return AssetHandler.getPath(file, '', library);
+		return AssetManager.getPath(file, '', library);
 	}
 
 	inline static function getLibraryPathForce(file:String, library:String)
 	{
-		return AssetHandler.getPath(file, '', library);
+		return AssetManager.getPath(file, '', library);
 	}
 
 	inline public static function getPreloadPath(file:String = '')
@@ -217,47 +217,47 @@ class Paths
 
 	inline static public function file(file:String, type:AssetType = TEXT, ?library:String)
 	{
-		return AssetHandler.getPath(file, '', library);
+		return AssetManager.getPath(file, '', library);
 	}
 
 	inline static public function txt(key:String, ?library:String)
 	{
-		return AssetHandler.getPath(key + '.txt', 'data', library);
+		return AssetManager.getPath(key + '.txt', 'data', library);
 	}
 
 	inline static public function xml(key:String, ?library:String)
 	{
-		return AssetHandler.getPath(key + '.xml', 'data', library);
+		return AssetManager.getPath(key + '.xml', 'data', library);
 	}
 
 	inline static public function json(key:String, ?library:String)
 	{
-		return AssetHandler.getPath(key + '.json', 'data', library);
+		return AssetManager.getPath(key + '.json', 'data', library);
 	}
 
 	inline static public function shaderFragment(key:String, ?library:String)
 	{
-		return AssetHandler.getPath(key + '.frag', 'shaders', library);
+		return AssetManager.getPath(key + '.frag', 'shaders', library);
 	}
 
 	inline static public function shaderVertex(key:String, ?library:String)
 	{
-		return AssetHandler.getPath(key + '.vert', 'shaders', library);
+		return AssetManager.getPath(key + '.vert', 'shaders', library);
 	}
 
 	inline static public function lua(key:String, ?library:String)
 	{
-		return AssetHandler.getPath(key + '.lua', '', library);
+		return AssetManager.getPath(key + '.lua', '', library);
 	}
 
 	static public function video(key:String)
 	{
-		return AssetHandler.getPath(key + '.' + VIDEO_EXT, 'videos', null);
+		return AssetManager.getPath(key + '.' + VIDEO_EXT, 'videos', null);
 	}
 
 	static public function sound(key:String, ?library:String):Sound
 	{
-		return AssetHandler.getSound(key, 'sounds', library);
+		return AssetManager.getSound(key, 'sounds', library);
 	}
 
 	inline static public function soundRandom(key:String, min:Int, max:Int, ?library:String)
@@ -267,49 +267,49 @@ class Paths
 
 	inline static public function music(key:String, ?library:String):Sound
 	{
-		return AssetHandler.getSound(key, 'music', library);
+		return AssetManager.getSound(key, 'music', library);
 	}
 
 	inline static public function voices(song:String):Any
 	{
 		var songKey:String = '${formatToSongPath(song)}/Voices';
-		return AssetHandler.getSound(songKey, 'songs');
+		return AssetManager.getSound(songKey, 'songs');
 	}
 
 	inline static public function inst(song:String):Any
 	{
 		var songKey:String = '${formatToSongPath(song)}/Inst';
-		return AssetHandler.getSound(songKey, 'songs');
+		return AssetManager.getSound(songKey, 'songs');
 	}
 
 	inline static public function image(key:String, ?library:String):FlxGraphic
 	{
-		return AssetHandler.getGraphic(key, library);
+		return AssetManager.getGraphic(key, library);
 	}
 
 	static public function getTextFromFile(key:String, ?ignoreMods:Bool = false):String
 	{
-		return AssetHandler.getText(key, '', null);
+		return AssetManager.getText(key, '', null);
 	}
 
 	inline static public function font(key:String)
 	{
-		return AssetHandler.getPath(key, 'fonts');
+		return AssetManager.getPath(key, 'fonts');
 	}
 
 	inline static public function fileExists(key:String, type:AssetType, ?ignoreMods:Bool = false, ?library:String)
 	{
-		return AssetHandler.fileExists(key, '', type, library);
+		return AssetManager.fileExists(key, '', type, library);
 	}
 
 	inline static public function getSparrowAtlas(key:String, ?library:String):FlxAtlasFrames
 	{
-		return AssetHandler.getSparrowAtlas(key, library);
+		return AssetManager.getSparrowAtlas(key, library);
 	}
 
 	inline static public function getPackerAtlas(key:String, ?library:String)
 	{
-		return AssetHandler.getPackerAtlas(key, library);
+		return AssetManager.getPackerAtlas(key, library);
 	}
 
 	inline static public function formatToSongPath(path:String)
@@ -325,14 +325,14 @@ class Paths
 
 	public static function returnGraphic(key:String, ?library:String)
 	{
-		return AssetHandler.getGraphic(key, library);
+		return AssetManager.getGraphic(key, library);
 	}
 
 	public static var currentTrackedSounds:Map<String, Sound> = [];
 
 	public static function returnSound(path:String, key:String, ?library:String)
 	{
-		return AssetHandler.getSound(key, path, library);
+		return AssetManager.getSound(key, path, library);
 	}
 
 	#if MODS_ALLOWED
@@ -378,14 +378,14 @@ class Paths
 
 	static public function modFolders(key:String)
 	{
-		return AssetHandler.getPath(key, '');
+		return AssetManager.getPath(key, '');
 	}
 
 	public static var globalMods:Array<String> = [];
 
 	public static function loadPriorityJson()
 	{
-		AssetHandler.init();
+		AssetManager.init();
 	}
 
 	static public function getGlobalMods()
@@ -404,7 +404,7 @@ class Paths
 				if (dat[1] == "1")
 				{
 					var folder = dat[0];
-					var path = Paths.mods(folder + '/pack.json');
+					var path = Path.mods(folder + '/pack.json');
 					if (FileSystem.exists(path))
 					{
 						try

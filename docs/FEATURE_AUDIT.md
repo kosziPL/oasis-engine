@@ -74,7 +74,7 @@ certification of every release.
 
 | Feature | Comparison | Implementation and scope |
 | --- | --- | --- |
-| Central asset resolver and priority overrides | Added | [AssetHandler.hx](../source/AssetHandler.hx) — priority.json, current/global mod fallback and assets/fnf; existing base assets win in base context. |
+| Central asset resolver and priority overrides | Added | [AssetManager.hx](../source/backend/managers/AssetManager.hx) — priority.json, current/global mod fallback and assets/fnf; existing base assets win in base context. |
 | Custom base-content preferences | Added | [CustomPrefs.hx](../source/CustomPrefs.hx) — Tutorial/weeks, mod week blocking, note asset name and title tempo. |
 | Mod-specific window and Discord metadata | Added | [TitleState.hx](../source/TitleState.hx) — pack.json window_name and discord_rpc fields; Discord Rich Presence itself is inherited. |
 | Lua source cache | Added | [FunkinLua.hx](../source/FunkinLua.hx) — Caches source text by path and loads it through LuaL.dostring. |
@@ -87,8 +87,8 @@ certification of every release.
 | Background asset preloading | Added | [AsyncAssetPreloader.hx](../source/AsyncAssetPreloader.hx) — Up to four workers read/decode queued sound/graphic jobs; main-thread dispatcher installs results. |
 | Incremental note creation | Added | [DynamicStreamLoader.hx](../source/DynamicStreamLoader.hx) — Initially processes up to eight sections; worker schedules chunks of two, looking about fifteen sections ahead. |
 | BSON chart cache | Added | [ChartBSONHandler.hx](../source/ChartBSONHandler.hx) — Timestamp-based cache rebuild, JSON fallback, and BSON-only load path. |
-| Optional GPU texture caching | Added | [AssetHandler.hx](../source/AssetHandler.hx) — Optional texture upload/bitmap handling; disabled by default, hardware-sensitive. |
-| Asset retention and cleanup | Changed | [Paths.hx](../source/Paths.hx) — Core-asset retention list and revised disposal around state changes. |
+| Optional GPU texture caching | Added | [AssetManager.hx](../source/backend/managers/AssetManager.hx) — Optional texture upload/bitmap handling; disabled by default, hardware-sensitive. |
+| Asset retention and cleanup | Changed | [Path.hx](../source/backend/managers/Path.hx) — Core-asset retention list and revised disposal around state changes. |
 | Vanilla stage logic extraction | Refactor | [VanillaWeekHandler.hx](../source/VanillaWeekHandler.hx) — Moves base-week behavior out of PlayState; it does not add new official FNF weeks. |
 | Dialogue audio reuse | Changed | [TypedAlphabet.hx](../source/TypedAlphabet.hx) — Reuses a sound object for typed dialogue and cleans it up. |
 

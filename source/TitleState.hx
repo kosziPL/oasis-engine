@@ -87,11 +87,11 @@ class TitleState extends MusicBeatState
 
 	override public function create():Void
 	{
-		Paths.clearStoredMemory();
-		Paths.clearUnusedMemory();
+		Path.clearStoredMemory();
+		Path.clearUnusedMemory();
 
 		#if LUA_ALLOWED
-		Paths.pushGlobalMods();
+		Path.pushGlobalMods();
 		#end
 		// Just to load a mod on start up if ya got one. For mods that change the menu music and bg
 		WeekData.loadTheFirstEnabledMod();
@@ -143,7 +143,7 @@ class TitleState extends MusicBeatState
 
 		Highscore.load();
 
-		titleJSON = Json.parse(Paths.getTextFromFile('images/gfDanceTitle.json'));
+		titleJSON = Json.parse(Path.getTextFromFile('images/gfDanceTitle.json'));
 
 		#if TITLE_SCREEN_EASTER_EGG
 		if (FlxG.save.data.psychDevsEasterEgg == null)
@@ -197,9 +197,9 @@ class TitleState extends MusicBeatState
 			#if desktop
 			#if MODS_ALLOWED
 			var hasPack:Bool = false;
-			if (Paths.currentModDirectory != null && Paths.currentModDirectory.length > 0)
+			if (Path.currentModDirectory != null && Path.currentModDirectory.length > 0)
 			{
-				var path = Paths.mods(Paths.currentModDirectory + '/pack.json');
+				var path = Path.mods(Path.currentModDirectory + '/pack.json');
 				if (sys.FileSystem.exists(path))
 				{
 					var rawJson = sys.io.File.getContent(path);
@@ -246,9 +246,9 @@ class TitleState extends MusicBeatState
 			#end
 			
 			#if MODS_ALLOWED
-			if (Paths.currentModDirectory != null && Paths.currentModDirectory.length > 0)
+			if (Path.currentModDirectory != null && Path.currentModDirectory.length > 0)
 			{
-				var introPath = Paths.mods(Paths.currentModDirectory + '/data/modIntroText.txt');
+				var introPath = Path.mods(Path.currentModDirectory + '/data/modIntroText.txt');
 				if (sys.FileSystem.exists(introPath))
 				{
 					var lines = sys.io.File.getContent(introPath).split('\n');
@@ -287,7 +287,7 @@ class TitleState extends MusicBeatState
 		{
 			if (FlxG.sound.music == null)
 			{
-				FlxG.sound.playMusic(Paths.music('freakyMenu'), 0);
+				FlxG.sound.playMusic(Path.music('freakyMenu'), 0);
 			}
 		}
 
@@ -298,7 +298,7 @@ class TitleState extends MusicBeatState
 
 		if (titleJSON.backgroundSprite != null && titleJSON.backgroundSprite.length > 0 && titleJSON.backgroundSprite != "none")
 		{
-			bg.loadGraphic(Paths.image(titleJSON.backgroundSprite));
+			bg.loadGraphic(Path.image(titleJSON.backgroundSprite));
 		}
 		else
 		{
@@ -308,7 +308,7 @@ class TitleState extends MusicBeatState
 		add(bg);
 
 		logoBl = new FlxSprite(titleJSON.titlex, titleJSON.titley);
-		logoBl.frames = Paths.getSparrowAtlas('logoBumpin');
+		logoBl.frames = Path.getSparrowAtlas('logoBumpin');
 
 		logoBl.antialiasing = ClientPrefs.globalAntialiasing;
 		logoBl.animation.addByPrefix('bump', 'logo bumpin', 24, false);
@@ -326,25 +326,25 @@ class TitleState extends MusicBeatState
 		{
 			#if TITLE_SCREEN_EASTER_EGG
 			case 'SHADOW':
-				gfDance.frames = Paths.getSparrowAtlas('ShadowBump');
+				gfDance.frames = Path.getSparrowAtlas('ShadowBump');
 				gfDance.animation.addByPrefix('danceLeft', 'Shadow Title Bump', 24);
 				gfDance.animation.addByPrefix('danceRight', 'Shadow Title Bump', 24);
 			case 'RIVER':
-				gfDance.frames = Paths.getSparrowAtlas('RiverBump');
+				gfDance.frames = Path.getSparrowAtlas('RiverBump');
 				gfDance.animation.addByIndices('danceLeft', 'River Title Bump', [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29], "", 24, false);
 				gfDance.animation.addByIndices('danceRight', 'River Title Bump', [29, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], "", 24, false);
 			case 'SHUBS':
-				gfDance.frames = Paths.getSparrowAtlas('ShubBump');
+				gfDance.frames = Path.getSparrowAtlas('ShubBump');
 				gfDance.animation.addByPrefix('danceLeft', 'Shub Title Bump', 24, false);
 				gfDance.animation.addByPrefix('danceRight', 'Shub Title Bump', 24, false);
 			case 'BBPANZU':
-				gfDance.frames = Paths.getSparrowAtlas('BBBump');
+				gfDance.frames = Path.getSparrowAtlas('BBBump');
 				gfDance.animation.addByIndices('danceLeft', 'BB Title Bump', [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27], "", 24, false);
 				gfDance.animation.addByIndices('danceRight', 'BB Title Bump', [27, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], "", 24, false);
 			#end
 
 			default:
-				gfDance.frames = Paths.getSparrowAtlas('gfDanceTitle');
+				gfDance.frames = Path.getSparrowAtlas('gfDanceTitle');
 				gfDance.animation.addByIndices('danceLeft', 'gfDance', [30, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], "", 24, false);
 				gfDance.animation.addByIndices('danceRight', 'gfDance', [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29], "", 24, false);
 		}
@@ -356,7 +356,7 @@ class TitleState extends MusicBeatState
 		logoBl.shader = swagShader.shader;
 
 		titleText = new FlxSprite(titleJSON.startx, titleJSON.starty);
-		titleText.frames = Paths.getSparrowAtlas('titleEnter');
+		titleText.frames = Path.getSparrowAtlas('titleEnter');
 
 		var animFrames:Array<FlxFrame> = [];
 		@:privateAccess {
@@ -393,7 +393,7 @@ class TitleState extends MusicBeatState
 		credTextShit.screenCenter();
 		credTextShit.visible = false;
 
-		ngSpr = new FlxSprite(0, FlxG.height * 0.52).loadGraphic(Paths.image('newgrounds_logo'));
+		ngSpr = new FlxSprite(0, FlxG.height * 0.52).loadGraphic(Path.image('newgrounds_logo'));
 		add(ngSpr);
 		ngSpr.visible = false;
 		ngSpr.setGraphicSize(Std.int(ngSpr.width * 0.8));
@@ -411,7 +411,7 @@ class TitleState extends MusicBeatState
 
 	function getIntroTextShit():Array<Array<String>>
 	{
-		var fullText:String = Assets.getText(Paths.txt('introText'));
+		var fullText:String = Assets.getText(Path.txt('introText'));
 		var firstArray:Array<String> = fullText.split('\n');
 		var swagGoodArray:Array<Array<String>> = [];
 		for (i in firstArray)
@@ -485,7 +485,7 @@ class TitleState extends MusicBeatState
 					titleText.animation.play('press');
 
 				FlxG.camera.flash(ClientPrefs.flashing ? FlxColor.WHITE : 0x4CFFFFFF, 1);
-				FlxG.sound.play(Paths.sound('confirmMenu'), 0.7);
+				FlxG.sound.play(Path.sound('confirmMenu'), 0.7);
 
 				transitioning = true;
 				new FlxTimer().start(1, function(tmr:FlxTimer)
@@ -523,7 +523,7 @@ class TitleState extends MusicBeatState
 								FlxG.save.data.psychDevsEasterEgg = word;
 							FlxG.save.flush();
 
-							FlxG.sound.play(Paths.sound('ToggleJingle'));
+							FlxG.sound.play(Path.sound('ToggleJingle'));
 
 							var black:FlxSprite = new FlxSprite(0, 0).makeGraphic(FlxG.width, FlxG.height, FlxColor.BLACK);
 							black.alpha = 0;
@@ -646,7 +646,7 @@ class TitleState extends MusicBeatState
 			switch (sickBeats)
 			{
 				case 1:
-					FlxG.sound.playMusic(Paths.music('freakyMenu'), 0);
+					FlxG.sound.playMusic(Path.music('freakyMenu'), 0);
 					FlxG.sound.music.fadeIn(4, 0, 0.7);
 				case 2:
 					createCoolText(['Oasis Engine by'], 15);
@@ -697,13 +697,13 @@ class TitleState extends MusicBeatState
 				switch (easteregg)
 				{
 					case 'RIVER':
-						sound = FlxG.sound.play(Paths.sound('JingleRiver'));
+						sound = FlxG.sound.play(Path.sound('JingleRiver'));
 					case 'SHUBS':
-						sound = FlxG.sound.play(Paths.sound('JingleShubs'));
+						sound = FlxG.sound.play(Path.sound('JingleShubs'));
 					case 'SHADOW':
-						FlxG.sound.play(Paths.sound('JingleShadow'));
+						FlxG.sound.play(Path.sound('JingleShadow'));
 					case 'BBPANZU':
-						sound = FlxG.sound.play(Paths.sound('JingleBB'));
+						sound = FlxG.sound.play(Path.sound('JingleBB'));
 
 					default:
 						remove(ngSpr);
@@ -712,7 +712,7 @@ class TitleState extends MusicBeatState
 						skippedIntro = true;
 						playJingle = false;
 
-						FlxG.sound.playMusic(Paths.music('freakyMenu'), 0);
+						FlxG.sound.playMusic(Path.music('freakyMenu'), 0);
 						FlxG.sound.music.fadeIn(4, 0, 0.7);
 						return;
 				}
@@ -735,7 +735,7 @@ class TitleState extends MusicBeatState
 					FlxG.camera.flash(FlxColor.WHITE, 3);
 					sound.onComplete = function()
 					{
-						FlxG.sound.playMusic(Paths.music('freakyMenu'), 0);
+						FlxG.sound.playMusic(Path.music('freakyMenu'), 0);
 						FlxG.sound.music.fadeIn(4, 0, 0.7);
 						transitioning = false;
 					};

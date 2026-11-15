@@ -51,7 +51,7 @@ Start with this layout and the engine's editors. The archived `docs/modTemplate.
 
 ## Asset resolution
 
-[AssetHandler](source/AssetHandler.hx) resolves keys such as `images/example.png`:
+[AssetManager](source/backend/managers/AssetManager.hx) resolves keys such as `images/example.png`:
 
 1. In base-game context (no current mod), an existing `assets/fnf/` file wins first.
 2. Otherwise, a matching entry in `assets/custom/priority.json` is tried.

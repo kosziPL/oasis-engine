@@ -97,7 +97,7 @@ class WeekData {
 		#if MODS_ALLOWED
 		var disabledMods:Array<String> = [];
 		var modsListPath:String = 'customList.txt';
-		var directories:Array<String> = [Paths.getPreloadPath(), Paths.mods()];
+		var directories:Array<String> = [Path.getPreloadPath(), Path.mods()];
 		var originalLength:Int = directories.length;
 
 		if(FileSystem.exists(modsListPath))
@@ -110,23 +110,23 @@ class WeekData {
 					disabledMods.push(splitName[0]);
 				}
 				else {
-					var path = haxe.io.Path.join([Paths.mods(), splitName[0]]);
-					if (sys.FileSystem.isDirectory(path) && !Paths.ignoreModFolders.contains(splitName[0]) && !disabledMods.contains(splitName[0]) && !directories.contains(path + '/')) {
+					var path = haxe.io.Path.join([Path.mods(), splitName[0]]);
+					if (sys.FileSystem.isDirectory(path) && !Path.ignoreModFolders.contains(splitName[0]) && !disabledMods.contains(splitName[0]) && !directories.contains(path + '/')) {
 						directories.push(path + '/');
 					}
 				}
 			}
 		}
 
-		var modsDirectories:Array<String> = Paths.getModDirectories();
+		var modsDirectories:Array<String> = Path.getModDirectories();
 		var baseGameDisabled:Bool = false;
 		for (folder in modsDirectories)
 		{
-			var pathThing:String = haxe.io.Path.join([Paths.mods(), folder]) + '/';
+			var pathThing:String = haxe.io.Path.join([Path.mods(), folder]) + '/';
 			if (!disabledMods.contains(folder) && !directories.contains(pathThing)) {
 				directories.push(pathThing);
 				
-				var packJsonPath:String = haxe.io.Path.join([Paths.mods(), folder, 'pack.json']);
+				var packJsonPath:String = haxe.io.Path.join([Path.mods(), folder, 'pack.json']);
 				if (sys.FileSystem.exists(packJsonPath)) {
 					try {
 						var packData:Dynamic = haxe.Json.parse(sys.io.File.getContent(packJsonPath));
@@ -138,7 +138,7 @@ class WeekData {
 			}
 		}
 		#else
-		var directories:Array<String> = [Paths.getPreloadPath()];
+		var directories:Array<String> = [Path.getPreloadPath()];
 		var originalLength:Int = directories.length;
 		var baseGameDisabled:Bool = false;
 		#end
@@ -182,7 +182,7 @@ class WeekData {
 	private static function addWeek(weekToCheck:String, path:String, directory:String, i:Int, originalLength:Int, isStoryMode:Null<Bool>)
 	{
 		if (!CustomPrefs.load_tutorial && weekToCheck == 'tutorial') return;
-		if (!CustomPrefs.load_weeks && directory == Paths.getPreloadPath() && weekToCheck != 'tutorial') return;
+		if (!CustomPrefs.load_weeks && directory == Path.getPreloadPath() && weekToCheck != 'tutorial') return;
 		
 		var week:WeekFile = getWeekFile(path);
 		if(week != null)
@@ -191,7 +191,7 @@ class WeekData {
 			if(i >= originalLength)
 			{
 				#if MODS_ALLOWED
-				weekFile.folder = directory.substring(Paths.mods().length, directory.length-1);
+				weekFile.folder = directory.substring(Path.mods().length, directory.length-1);
 				#end
 			}
 			
@@ -240,15 +240,15 @@ class WeekData {
 	}
 
 	public static function setDirectoryFromWeek(?data:WeekData = null) {
-		Paths.currentModDirectory = '';
+		Path.currentModDirectory = '';
 		if(data != null && data.folder != null && data.folder.length > 0) {
-			Paths.currentModDirectory = data.folder;
+			Path.currentModDirectory = data.folder;
 		}
 	}
 
 	public static function loadTheFirstEnabledMod()
 	{
-		Paths.currentModDirectory = '';
+		Path.currentModDirectory = '';
 		
 		#if MODS_ALLOWED
 		if (FileSystem.exists("customList.txt"))
@@ -261,7 +261,7 @@ class WeekData {
 				if (dat[1] == "1" && !foundTheTop)
 				{
 					foundTheTop = true;
-					Paths.currentModDirectory = dat[0];
+					Path.currentModDirectory = dat[0];
 				}
 			}
 		}

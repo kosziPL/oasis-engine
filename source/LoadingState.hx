@@ -14,7 +14,7 @@ import lime.utils.Assets as LimeAssets;
 import lime.utils.AssetLibrary;
 import lime.utils.AssetManifest;
 
-import haxe.io.Path;
+import haxe.io.Path as FilePath;
 
 class LoadingState extends MusicBeatState
 {
@@ -46,7 +46,7 @@ class LoadingState extends MusicBeatState
 	{
 		var bg:FlxSprite = new FlxSprite(0, 0).makeGraphic(FlxG.width, FlxG.height, 0xffcaff4d);
 		add(bg);
-		funkay = new FlxSprite(0, 0).loadGraphic(Paths.getPath('images/funkay.png', IMAGE));
+		funkay = new FlxSprite(0, 0).loadGraphic(Path.getPath('images/funkay.png', IMAGE));
 		funkay.setGraphicSize(0, FlxG.height);
 		funkay.updateHitbox();
 		funkay.antialiasing = ClientPrefs.globalAntialiasing;
@@ -137,12 +137,12 @@ class LoadingState extends MusicBeatState
 	
 	static function getSongPath()
 	{
-		return Paths.inst(PlayState.SONG.song);
+		return Path.inst(PlayState.SONG.song);
 	}
 	
 	static function getVocalPath()
 	{
-		return Paths.voices(PlayState.SONG.song);
+		return Path.voices(PlayState.SONG.song);
 	}
 	
 	inline static public function loadAndSwitchState(target:FlxState, stopMusic = false)
@@ -174,7 +174,7 @@ class LoadingState extends MusicBeatState
 
 		if(weekDir != null && weekDir.length > 0 && weekDir != '') directory = weekDir;
 
-		Paths.setCurrentLevel(directory);
+		Path.setCurrentLevel(directory);
 		trace('Setting asset folder to ' + directory);
 
 		#if NO_PRELOAD_ALL
@@ -231,7 +231,7 @@ class LoadingState extends MusicBeatState
 		if (libraryPaths.exists(id))
 		{
 			path = libraryPaths[id];
-			rootPath = Path.directory(path);
+			rootPath = FilePath.directory(path);
 		}
 		else
 		{
@@ -242,7 +242,7 @@ class LoadingState extends MusicBeatState
 			}
 			else
 			{
-				rootPath = Path.directory(path);
+				rootPath = FilePath.directory(path);
 			}
 			@:privateAccess
 			path = LimeAssets.__cacheBreak(path);
@@ -349,11 +349,11 @@ class BackgroundPreloader
 		var imagesToLoad:Array<String> = [];
 		var soundsToLoad:Array<String> = [];
 
-		var instKey:String = Paths.formatToSongPath(targetSong.song) + '/Inst';
+		var instKey:String = Path.formatToSongPath(targetSong.song) + '/Inst';
 		soundsToLoad.push(instKey);
 
 		if (targetSong.needsVoices) {
-			var voiceKey:String = Paths.formatToSongPath(targetSong.song) + '/Voices';
+			var voiceKey:String = Path.formatToSongPath(targetSong.song) + '/Voices';
 			soundsToLoad.push(voiceKey);
 		}
 
@@ -365,13 +365,13 @@ class BackgroundPreloader
 
 	#if sys
 	private static function preloadChartJson(song:Song.SwagSong) {
-		var songName = Paths.formatToSongPath(song.song);
+		var songName = Path.formatToSongPath(song.song);
 		
 		sys.thread.Thread.create(function() {
 			try {
 				var cacheKey:String = songName + '/' + songName;
 				if (!Song.chartCache.exists(cacheKey)) {
-					var jsonPath:String = Paths.json(songName + '/' + songName);
+					var jsonPath:String = Path.json(songName + '/' + songName);
 					if (sys.FileSystem.exists(jsonPath)) {
 						var raw = StringTools.trim(sys.io.File.getContent(jsonPath));
 						Song.chartCache.set(cacheKey, raw);
@@ -386,7 +386,7 @@ class BackgroundPreloader
 							for (evt in cast(event[1], Array<Dynamic>)) {
 								try {
 									var eventName:String = Std.string(evt[0]);
-									var path = Paths.modFolders('events/' + eventName + '.lua');
+									var path = Path.modFolders('events/' + eventName + '.lua');
 									if (sys.FileSystem.exists(path)) {
 										sys.io.File.getContent(path);
 									}

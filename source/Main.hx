@@ -16,7 +16,7 @@ import openfl.display.StageScaleMode;
 import lime.app.Application;
 import openfl.events.UncaughtErrorEvent;
 import haxe.CallStack;
-import haxe.io.Path;
+import haxe.io.Path as FilePath;
 import Discord.DiscordClient;
 import sys.FileSystem;
 import sys.io.File;
@@ -124,7 +124,7 @@ class Main extends Sprite
 		FlxG.mouse.visible = false;
 		#end
 		
-		Paths.preloadCoreAssets();
+		Path.preloadCoreAssets();
 	}
 
 	// Code was entirely made by sqirra-rng for their fnf engine named "Izzy Engine", big props to them!!!
@@ -163,7 +163,7 @@ class Main extends Sprite
 		File.saveContent(path, errMsg + "\n");
 
 		Sys.println(errMsg);
-		Sys.println("Crash dump saved in " + Path.normalize(path));
+		Sys.println("Crash dump saved in " + FilePath.normalize(path));
 
 		#if linux
 		Sys.command("zenity", ["--error", "--title=Error!", "--text=" + errMsg]);

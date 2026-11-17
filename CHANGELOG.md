@@ -6,8 +6,7 @@ To be honest, I'm so glad I made these changes because they're nice and make thi
 
 ## Added
 
-- Added feature artists field. It displays only in Pause menu
-, but IDK some cool util, for example FNF has it in V-Slice too.
+- Added feature artists field. It displays only in Pause menu, but IDK some cool util, for example FNF has it in V-Slice too.
 - Added two previously forgotten credits
 
 ### Changes
